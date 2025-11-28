@@ -249,6 +249,55 @@ body {
   animation: blink 1s ease-in-out infinite;
 }
 
+.header-status .status.compiling {
+  background: linear-gradient(135deg, rgba(0, 217, 255, 0.15), rgba(123, 45, 255, 0.15));
+  color: var(--accent-primary);
+  border: 1px solid rgba(0, 217, 255, 0.4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.header-status .status.compiling:hover {
+  background: linear-gradient(135deg, rgba(255, 68, 102, 0.15), rgba(255, 68, 102, 0.2));
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
+}
+
+.header-status .status.compiling::before {
+  display: none;
+}
+
+.header-status .status.compiling .cancel-hint {
+  opacity: 0;
+  font-size: 12px;
+  transition: opacity 0.2s ease;
+}
+
+.header-status .status.compiling:hover .cancel-hint {
+  opacity: 1;
+}
+
+.compile-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(0, 217, 255, 0.3);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.header-status .status.compiling:hover .compile-spinner {
+  border-color: rgba(255, 68, 102, 0.3);
+  border-top-color: var(--accent-danger);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
@@ -374,6 +423,7 @@ body {
   display: flex;
   overflow: hidden;
   background: var(--bg-deepest);
+  width: 100%;
 }
 
 /* Panel containers */
@@ -388,16 +438,18 @@ body {
 }
 
 .editor-pane {
-  min-width: 300px;
+  min-width: 200px;
+  flex-shrink: 0;
 }
 
 .viewer-pane {
-  min-width: 300px;
+  min-width: 200px;
+  flex: 1;
 }
 
 .side-pane {
-  min-width: 320px;
-  max-width: 600px;
+  min-width: 250px;
+  flex-shrink: 0;
 }
 
 /* ============================================
@@ -1426,6 +1478,55 @@ body {
 
 .message-bubble.auto-applied .message-header {
   background: linear-gradient(135deg, rgba(0, 0, 0, 0.2), rgba(0, 255, 136, 0.05));
+}
+
+/* Compile status button in chat panel */
+.compile-status-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(0, 217, 255, 0.15), rgba(123, 45, 255, 0.15)) !important;
+  border-color: rgba(0, 217, 255, 0.4) !important;
+  color: var(--accent-primary) !important;
+  font-weight: 600;
+  animation: compileGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes compileGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 217, 255, 0); }
+  50% { box-shadow: 0 0 12px 2px rgba(0, 217, 255, 0.3); }
+}
+
+.compile-status-btn:hover {
+  background: linear-gradient(135deg, rgba(255, 68, 102, 0.15), rgba(255, 68, 102, 0.2)) !important;
+  border-color: var(--accent-danger) !important;
+  color: var(--accent-danger) !important;
+  animation: none;
+}
+
+.compile-status-btn .cancel-x {
+  opacity: 0;
+  font-size: 11px;
+  transition: opacity 0.2s ease;
+}
+
+.compile-status-btn:hover .cancel-x {
+  opacity: 1;
+}
+
+.mini-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(0, 217, 255, 0.3);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.compile-status-btn:hover .mini-spinner {
+  border-color: rgba(255, 68, 102, 0.3);
+  border-top-color: var(--accent-danger);
 }
 
 .input-container {

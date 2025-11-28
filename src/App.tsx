@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef, MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useCallback, useState, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { CodeEditor } from './components/CodeEditor';
 import { Viewer } from './components/Viewer';
 import { MutationPanel } from './components/MutationPanel';
@@ -16,22 +16,29 @@ type RightPanel = 'chat' | 'mutations' | 'history' | 'vlm';
 const PANEL_SIZES_KEY = 'scad-forge-panel-sizes';
 
 interface PanelSizes {
-  editorWidth: number;
-  viewerWidth: number;
-  sideWidth: number;
+  editorWidth: number;  // Left-anchored - absolute width
+  sideWidth: number;    // Right-anchored - absolute width
+  // viewerWidth is calculated as the remaining space
 }
 
 const DEFAULT_PANEL_SIZES: PanelSizes = {
-  editorWidth: 33,
-  viewerWidth: 34,
-  sideWidth: 33,
+  editorWidth: 30,
+  sideWidth: 30,
 };
 
 function loadPanelSizes(): PanelSizes {
   try {
     const stored = localStorage.getItem(PANEL_SIZES_KEY);
     if (stored) {
-      return JSON.parse(stored);
+      const parsed = JSON.parse(stored);
+      // Migrate old format if needed
+      if ('viewerWidth' in parsed) {
+        return {
+          editorWidth: parsed.editorWidth || DEFAULT_PANEL_SIZES.editorWidth,
+          sideWidth: parsed.sideWidth || DEFAULT_PANEL_SIZES.sideWidth,
+        };
+      }
+      return parsed;
     }
   } catch (e) {
     console.warn('Failed to load panel sizes:', e);
@@ -50,8 +57,9 @@ function savePanelSizes(sizes: PanelSizes): void {
 function App() {
   const [rightPanel, setRightPanel] = useState<RightPanel>('chat');
   const [engineReady, setEngineReady] = useState(false);
+  const [isCompiling, setIsCompiling] = useState(false);
   
-  // Resizable panel state
+  // Resizable panel state - editor anchors left, side-pane anchors right
   const [panelSizes, setPanelSizes] = useState<PanelSizes>(loadPanelSizes);
   const [isDragging, setIsDragging] = useState<'left' | 'right' | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -60,6 +68,7 @@ function App() {
     code,
     themeConfig,
     historyIndex,
+    engineStatus,
     setTheme,
     setRenderResult,
     setEngineStatus,
@@ -93,12 +102,21 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Intentionally empty - only run once on mount
   
+  // Cancel compile handler
+  const handleCancelCompile = useCallback(async () => {
+    const engine = await getEngine();
+    engine.cancel();
+    setIsCompiling(false);
+    setEngineStatus({ compiling: false });
+  }, [setEngineStatus]);
+  
   // Compile handler
   const handleCompile = useCallback(async () => {
     const engine = await getEngine();
     // Always get fresh code from store to avoid stale closure issues
     const currentCode = useForgeStore.getState().code;
     
+    setIsCompiling(true);
     setEngineStatus({ compiling: true });
     
     try {
@@ -113,7 +131,7 @@ function App() {
     } catch (error) {
       // Ignore cancellation errors
       const errorMsg = error instanceof Error ? error.message : 'Compilation failed';
-      if (errorMsg === 'Compilation superseded') {
+      if (errorMsg === 'Compilation superseded' || errorMsg === 'Compilation cancelled') {
         return;
       }
       
@@ -122,6 +140,7 @@ function App() {
         error: errorMsg,
       });
     } finally {
+      setIsCompiling(false);
       setEngineStatus({ compiling: false });
     }
   }, [setRenderResult, setEngineStatus]);
@@ -214,13 +233,18 @@ function App() {
         e.preventDefault();
         handleRedo();
       }
+      
+      // Escape to cancel compile
+      if (e.key === 'Escape' && isCompiling) {
+        handleCancelCompile();
+      }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleCompile, handleUndo, handleRedo]);
+  }, [handleCompile, handleUndo, handleRedo, handleCancelCompile, isCompiling]);
   
-  // Panel resize handlers
+  // Panel resize handlers - editor anchors left, side-pane anchors right
   const handleResizeStart = useCallback((handle: 'left' | 'right') => (e: ReactMouseEvent) => {
     e.preventDefault();
     setIsDragging(handle);
@@ -235,31 +259,16 @@ function App() {
     const mousePercent = (mouseX / totalWidth) * 100;
     
     setPanelSizes(prev => {
-      let newSizes = { ...prev };
-      
       if (isDragging === 'left') {
-        // Dragging the left handle (between editor and viewer)
+        // Dragging the left handle - adjusts editor width (anchored left)
         const editorWidth = Math.max(15, Math.min(50, mousePercent));
-        const remaining = 100 - editorWidth;
-        const viewerRatio = prev.viewerWidth / (prev.viewerWidth + prev.sideWidth);
-        newSizes = {
-          editorWidth,
-          viewerWidth: remaining * viewerRatio,
-          sideWidth: remaining * (1 - viewerRatio),
-        };
+        return { ...prev, editorWidth };
       } else if (isDragging === 'right') {
-        // Dragging the right handle (between viewer and side panel)
+        // Dragging the right handle - adjusts side panel width (anchored right)
         const sideWidth = Math.max(15, Math.min(50, 100 - mousePercent));
-        const remaining = 100 - sideWidth;
-        const editorRatio = prev.editorWidth / (prev.editorWidth + prev.viewerWidth);
-        newSizes = {
-          editorWidth: remaining * editorRatio,
-          viewerWidth: remaining * (1 - editorRatio),
-          sideWidth,
-        };
+        return { ...prev, sideWidth };
       }
-      
-      return newSizes;
+      return prev;
     });
   }, [isDragging]);
   
@@ -293,6 +302,7 @@ function App() {
     savePanelSizes(DEFAULT_PANEL_SIZES);
   }, []);
   
+  
   return (
     <div className="app">
       {/* Ambient Background Effects */}
@@ -310,7 +320,17 @@ function App() {
         </div>
         
         <div className="header-status">
-          {engineReady ? (
+          {engineStatus.compiling ? (
+            <button 
+              className="status compiling" 
+              onClick={handleCancelCompile}
+              title="Click to cancel (or press Escape)"
+            >
+              <span className="compile-spinner"></span>
+              Compiling... 
+              <span className="cancel-hint">✕</span>
+            </button>
+          ) : engineReady ? (
             <span className="status ready">Engine Ready</span>
           ) : (
             <span className="status loading">Loading Engine...</span>
@@ -378,9 +398,10 @@ function App() {
         {/* Resize overlay when dragging */}
         {isDragging && <div className="resize-overlay" />}
         
+        {/* Editor - anchored left */}
         <div 
           className="editor-pane" 
-          style={{ width: `${panelSizes.editorWidth}%` }}
+          style={{ width: `${panelSizes.editorWidth}%`, flexShrink: 0 }}
         >
           <CodeEditor onCompile={handleCompile} />
         </div>
@@ -393,9 +414,13 @@ function App() {
           title="Drag to resize • Double-click to reset"
         />
         
+        {/* Viewer - flexible center, takes remaining space */}
         <div 
           className="viewer-pane"
-          style={{ width: `${panelSizes.viewerWidth}%` }}
+          style={{ 
+            flex: 1,
+            minWidth: 0, // Allow flex item to shrink below content size
+          }}
         >
           <Viewer onCapture={handleCapture} />
         </div>
@@ -408,9 +433,10 @@ function App() {
           title="Drag to resize • Double-click to reset"
         />
         
+        {/* Side Panel - anchored right */}
         <div 
           className="side-pane"
-          style={{ width: `${panelSizes.sideWidth}%` }}
+          style={{ width: `${panelSizes.sideWidth}%`, flexShrink: 0 }}
         >
           <div className="panel-tabs">
             <button
@@ -440,7 +466,13 @@ function App() {
           </div>
           
           <div className="panel-content">
-            {rightPanel === 'chat' && <ChatPanel onCompile={handleCompile} />}
+            {rightPanel === 'chat' && (
+              <ChatPanel 
+                onCompile={handleCompile} 
+                onCancelCompile={handleCancelCompile}
+                isCompiling={engineStatus.compiling}
+              />
+            )}
             {rightPanel === 'mutations' && <MutationPanel />}
             {rightPanel === 'history' && <HistoryPanel />}
             {rightPanel === 'vlm' && <VLMPanel onRequestMutation={handleVLMRequest} />}
@@ -453,6 +485,7 @@ function App() {
           <span className="keybind">Ctrl+Enter</span> Compile
           <span className="keybind">Ctrl+Z</span> Undo
           <span className="keybind">Ctrl+Y</span> Redo
+          <span className="keybind">Esc</span> Cancel
         </div>
         <div className="footer-right">
           AZAI Fabrication Profile • 220³mm Print • 400²mm Laser

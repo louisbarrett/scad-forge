@@ -17,22 +17,41 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
 };
 
 // System prompt for OpenSCAD code generation - CODE ONLY, no explanations
-const PLANNING_SYSTEM_PROMPT = `You are an OpenSCAD code generator. Output ONLY code, no explanations.
+const PLANNING_SYSTEM_PROMPT = `You are an expert OpenSCAD code generator. Your task is to generate or modify OpenSCAD code.
 
-RULES:
-1. Output ONLY a single \`\`\`openscad code block
-2. NO explanations, NO descriptions, NO comments about changes
-3. Output the COMPLETE modified code
+CRITICAL RULES:
+1. ALWAYS output your code in a \`\`\`openscad code block
+2. Output the COMPLETE modified code, not just snippets
+3. Keep explanations minimal - focus on the code
 4. Preserve existing variables and modules unless asked to change them
 
-CONSTRAINTS:
-- Print: 220×220×220mm
-- clearance_loose: 0.4mm, clearance_press: 0.15mm
-- M3 clearance: 3.4mm, M3 insert: 4.0mm
+FABRICATION CONSTRAINTS:
+- 3D Print volume: 220×220×220mm
+- clearance_loose: 0.4mm, clearance_press: 0.15mm  
+- M3 clearance hole: 3.4mm, M3 heat-set insert: 4.0mm
 
-Example response format:
+REQUIRED OUTPUT FORMAT - Always wrap code like this:
 \`\`\`openscad
-// code here
+// Your complete OpenSCAD code here
+\`\`\``;
+
+// System prompt for chat with vision - still outputs code
+const VISION_CHAT_PROMPT = `You are an expert OpenSCAD code generator with vision capabilities. You can see images of 3D models and modify the code accordingly.
+
+CRITICAL RULES:
+1. ALWAYS output your code in a \`\`\`openscad code block
+2. Output the COMPLETE modified code, not just snippets
+3. When you see an image, analyze it and generate code that achieves the user's request
+4. Preserve existing variables and modules unless asked to change them
+
+FABRICATION CONSTRAINTS:
+- 3D Print volume: 220×220×220mm
+- clearance_loose: 0.4mm, clearance_press: 0.15mm
+- M3 clearance hole: 3.4mm, M3 heat-set insert: 4.0mm
+
+REQUIRED OUTPUT FORMAT - Always wrap code like this:
+\`\`\`openscad
+// Your complete OpenSCAD code here
 \`\`\``;
 
 // System prompt for vision analysis
@@ -413,9 +432,10 @@ Generate the complete modified OpenSCAD code that implements the requested chang
     this.abortController = new AbortController();
 
     // If there's an image, use the vision model, otherwise use planning model
+    // But ALWAYS use a code-generation prompt so we get ```openscad blocks
     const hasImage = imageDataUrl || chatHistory.some(m => m.attachedImage);
     const model = hasImage ? this.getModelForTask('vision') : this.getModelForTask('planning');
-    const systemPrompt = hasImage ? VISION_SYSTEM_PROMPT : PLANNING_SYSTEM_PROMPT;
+    const systemPrompt = hasImage ? VISION_CHAT_PROMPT : PLANNING_SYSTEM_PROMPT;
     
     const messages = this.buildMessages(chatHistory, currentCode, imageDataUrl, systemPrompt);
 
@@ -492,9 +512,11 @@ Generate the complete modified OpenSCAD code that implements the requested chang
   ): Promise<string> {
     this.abortController = new AbortController();
 
+    // If there's an image, use the vision model, otherwise use planning model
+    // But ALWAYS use a code-generation prompt so we get ```openscad blocks
     const hasImage = imageDataUrl || chatHistory.some(m => m.attachedImage);
     const model = hasImage ? this.getModelForTask('vision') : this.getModelForTask('planning');
-    const systemPrompt = hasImage ? VISION_SYSTEM_PROMPT : PLANNING_SYSTEM_PROMPT;
+    const systemPrompt = hasImage ? VISION_CHAT_PROMPT : PLANNING_SYSTEM_PROMPT;
     
     const messages = this.buildMessages(chatHistory, currentCode, imageDataUrl, systemPrompt);
 

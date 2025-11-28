@@ -10,6 +10,7 @@ export interface IOpenSCADEngine {
   compile(code: string): Promise<RenderResult>;
   analyze(code: string): ScadAnalysis;
   isReady(): boolean;
+  cancel(): void;
 }
 
 /**
@@ -262,6 +263,16 @@ export class WASMOpenSCADEngine implements IOpenSCADEngine {
         error: error instanceof Error ? error.message : 'Unknown error',
         renderTime: performance.now() - startTime,
       };
+    }
+  }
+  
+  cancel(): void {
+    // Cancel any pending compilation by incrementing ID and rejecting the promise
+    this.compilationId++;
+    if (this.pendingReject) {
+      this.pendingReject(new Error('Compilation cancelled'));
+      this.pendingResolve = null;
+      this.pendingReject = null;
     }
   }
   

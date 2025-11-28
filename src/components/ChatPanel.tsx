@@ -452,9 +452,11 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
 
 interface ChatPanelProps {
   onCompile?: () => void;
+  onCancelCompile?: () => void;
+  isCompiling?: boolean;
 }
 
-export function ChatPanel({ onCompile }: ChatPanelProps) {
+export function ChatPanel({ onCompile, onCancelCompile, isCompiling }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [includeCode, setIncludeCode] = useState(true);
   const [includeImage, setIncludeImage] = useState(false);
@@ -633,6 +635,17 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
           {isChatStreaming && <span className="streaming-badge">Streaming...</span>}
         </span>
         <div className="panel-actions">
+          {isCompiling && onCancelCompile && (
+            <button
+              className="action-btn compile-status-btn"
+              onClick={onCancelCompile}
+              title="Cancel render (Esc)"
+            >
+              <span className="mini-spinner"></span>
+              Rendering...
+              <span className="cancel-x">✕</span>
+            </button>
+          )}
           <button
             className="action-btn settings-btn"
             onClick={() => setShowSettings(true)}
