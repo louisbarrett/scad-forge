@@ -389,6 +389,49 @@ function App() {
     }
   }, [canRedo, redo]);
   
+  // Export STL handler
+  const [isExporting, setIsExporting] = useState(false);
+  
+  const handleExportSTL = useCallback(async () => {
+    const engine = await getEngine();
+    const currentCode = useForgeStore.getState().code;
+    
+    setIsExporting(true);
+    addSystemMessage('info', 'Starting STL export...', 'export');
+    
+    try {
+      const result = await engine.exportSTL(currentCode);
+      
+      if (!result.success || !result.data) {
+        addSystemMessage('error', `STL export failed: ${result.error || 'Unknown error'}`, 'export');
+        return;
+      }
+      
+      // Create blob and download - copy to a new Uint8Array with its own ArrayBuffer for blob compatibility
+      const stlData = new Uint8Array(result.data);
+      const blob = new Blob([stlData], { type: 'application/sla' });
+      const url = URL.createObjectURL(blob);
+      
+      // Create download link
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `scad-forge-export-${Date.now()}.stl`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up
+      URL.revokeObjectURL(url);
+      
+      addSystemMessage('info', 'STL exported successfully!', 'export');
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      addSystemMessage('error', `STL export error: ${errorMsg}`, 'export');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [addSystemMessage]);
+  
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -584,8 +627,13 @@ function App() {
           >
             💾 Save
           </button>
-          <button className="nav-btn" onClick={() => {}}>
-            📤 Export STL
+          <button 
+            className="nav-btn" 
+            onClick={handleExportSTL}
+            disabled={isExporting || !engineReady}
+            title={isExporting ? 'Exporting...' : 'Export as STL file'}
+          >
+            {isExporting ? '⏳ Exporting...' : '📤 Export STL'}
           </button>
         </nav>
       </header>

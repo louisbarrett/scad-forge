@@ -2,12 +2,22 @@ import type { RenderResult, ScadAnalysis } from '../types';
 import { parseOFFBytesToGeometry } from '../utils/off-parser';
 
 /**
+ * STL Export Result
+ */
+export interface STLExportResult {
+  success: boolean;
+  data?: Uint8Array;
+  error?: string;
+}
+
+/**
  * OpenSCAD Engine Interface
  * Abstract the rendering backend
  */
 export interface IOpenSCADEngine {
   initialize(): Promise<void>;
   compile(code: string): Promise<RenderResult>;
+  exportSTL(code: string): Promise<STLExportResult>;
   analyze(code: string): ScadAnalysis;
   isReady(): boolean;
   cancel(): void;
@@ -297,6 +307,75 @@ export class WASMOpenSCADEngine implements IOpenSCADEngine {
       this.pendingReject(new Error('Compilation cancelled'));
       this.pendingResolve = null;
       this.pendingReject = null;
+    }
+  }
+  
+  async exportSTL(code: string): Promise<STLExportResult> {
+    if (!this.ready || !this.worker) {
+      return { success: false, error: 'Engine not initialized' };
+    }
+    
+    // Cancel any pending compilation by incrementing ID
+    this.compilationId++;
+    const thisCompilationId = this.compilationId;
+    
+    // Reject previous pending promise if any (cancellation)
+    if (this.pendingReject) {
+      this.pendingReject(new Error('Compilation superseded'));
+      this.pendingResolve = null;
+      this.pendingReject = null;
+    }
+    
+    // Reset output collectors
+    this.currentStdout = [];
+    this.currentStderr = [];
+    
+    try {
+      const result = await new Promise<WorkerResult>((resolve, reject) => {
+        this.pendingResolve = resolve;
+        this.pendingReject = reject;
+        
+        // Request STL format instead of OFF
+        this.worker!.postMessage({
+          code,
+          format: 'stl',
+          cancelId: thisCompilationId,
+        });
+      });
+      
+      // Check if this compilation was superseded
+      if (thisCompilationId !== this.compilationId) {
+        return { success: false, error: 'Export cancelled' };
+      }
+      
+      if (!result.success) {
+        const errorMessages = result.stderr.filter(line => 
+          line.startsWith('ERROR:') || line.startsWith('WARNING:')
+        );
+        
+        return {
+          success: false,
+          error: result.error || errorMessages.join('\n') || 'STL export failed',
+        };
+      }
+      
+      if (!result.output) {
+        return {
+          success: false,
+          error: 'No STL output generated',
+        };
+      }
+      
+      return {
+        success: true,
+        data: result.output,
+      };
+      
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
     }
   }
   
