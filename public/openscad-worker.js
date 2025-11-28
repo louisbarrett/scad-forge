@@ -91,6 +91,7 @@ async function createInstance() {
       self.postMessage({ type: 'stdout', text });
     },
     printErr: (text) => {
+      collectedStderr.push(text);
       self.postMessage({ type: 'stderr', text });
     },
   });
@@ -163,9 +164,15 @@ Promise.all([loadFactory(), loadFonts()])
     self.postMessage({ type: 'error', error: String(e) });
   });
 
+// Collected stderr messages for error reporting
+let collectedStderr = [];
+
 self.addEventListener('message', async (e) => {
   const { code, format } = e.data;
   const start = performance.now();
+  
+  // Reset collected stderr for this compilation
+  collectedStderr = [];
   
   let instance = null;
   
@@ -210,13 +217,21 @@ self.addEventListener('message', async (e) => {
     const elapsedMillis = performance.now() - start;
     
     if (exitCode !== 0) {
+      // Extract error messages from collected stderr
+      const errorLines = collectedStderr.filter(line => 
+        line.startsWith('ERROR:') || line.includes('error') || line.includes('Error')
+      );
+      const errorDetail = errorLines.length > 0 
+        ? errorLines.join('\n') 
+        : collectedStderr.slice(-5).join('\n'); // Last 5 lines if no explicit errors
+      
       self.postMessage({
         type: 'result',
         result: {
           success: false,
-          error: 'OpenSCAD exited with code ' + exitCode,
+          error: errorDetail || 'OpenSCAD exited with code ' + exitCode,
           stdout: [],
-          stderr: [],
+          stderr: collectedStderr,
           elapsedMillis: elapsedMillis,
         },
       });
