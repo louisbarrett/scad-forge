@@ -1,15 +1,57 @@
-import { useRef, useEffect, useMemo, useCallback } from 'react';
+import { useRef, useEffect, useMemo, useCallback, useState } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import * as THREE from 'three';
 import { useForgeStore } from '../store/forgeStore';
 
+// Hook to get CSS variable values for theming
+function useThemeColors() {
+  const [colors, setColors] = useState({
+    modelColor: '#00d9ff',
+    modelEmissive: '#002233',
+    gridCell: '#2a2a4a',
+    gridSection: '#3a3a6a',
+    viewerBg: '#0a0a14',
+  });
+  
+  useEffect(() => {
+    const updateColors = () => {
+      const root = document.documentElement;
+      const style = getComputedStyle(root);
+      
+      setColors({
+        modelColor: style.getPropertyValue('--viewer-model-color').trim() || '#00d9ff',
+        modelEmissive: style.getPropertyValue('--viewer-model-emissive').trim() || '#002233',
+        gridCell: style.getPropertyValue('--viewer-grid-cell').trim() || '#2a2a4a',
+        gridSection: style.getPropertyValue('--viewer-grid-section').trim() || '#3a3a6a',
+        viewerBg: style.getPropertyValue('--viewer-bg').trim() || '#0a0a14',
+      });
+    };
+    
+    // Initial update
+    updateColors();
+    
+    // Listen for theme changes via MutationObserver on style attribute
+    const observer = new MutationObserver(updateColors);
+    observer.observe(document.documentElement, { 
+      attributes: true, 
+      attributeFilter: ['style'] 
+    });
+    
+    return () => observer.disconnect();
+  }, []);
+  
+  return colors;
+}
+
 interface ModelProps {
   geometry: THREE.BufferGeometry | null;
   wireframe: boolean;
+  modelColor: string;
+  modelEmissive: string;
 }
 
-function Model({ geometry, wireframe }: ModelProps) {
+function Model({ geometry, wireframe, modelColor, modelEmissive }: ModelProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const { viewerState } = useForgeStore();
   
@@ -24,9 +66,11 @@ function Model({ geometry, wireframe }: ModelProps) {
   return (
     <mesh ref={meshRef} geometry={geometry} castShadow receiveShadow>
       <meshStandardMaterial
-        color="#00d9ff"
-        metalness={0.3}
-        roughness={0.4}
+        color={modelColor}
+        emissive={modelEmissive}
+        emissiveIntensity={0.15}
+        metalness={0.4}
+        roughness={0.35}
         wireframe={wireframe}
         side={THREE.DoubleSide}
       />
@@ -83,12 +127,37 @@ function SceneCapture({ onCapture, captureRef }: SceneCaptureProps) {
   return null;
 }
 
+interface ThemedGridProps {
+  position: [number, number, number];
+  cellColor: string;
+  sectionColor: string;
+}
+
+function ThemedGrid({ position, cellColor, sectionColor }: ThemedGridProps) {
+  return (
+    <Grid
+      args={[200, 200]}
+      position={position}
+      cellSize={10}
+      cellThickness={0.5}
+      cellColor={cellColor}
+      sectionSize={50}
+      sectionThickness={1}
+      sectionColor={sectionColor}
+      fadeDistance={400}
+      fadeStrength={1}
+      followCamera={false}
+    />
+  );
+}
+
 interface ViewerProps {
   onCapture?: (dataUrl: string, cameraPos: [number, number, number], cameraTarget: [number, number, number]) => void;
 }
 
 export function Viewer({ onCapture }: ViewerProps) {
   const captureRef = useRef<(() => void) | null>(null);
+  const themeColors = useThemeColors();
   
   const {
     renderResult,
@@ -176,7 +245,10 @@ export function Viewer({ onCapture }: ViewerProps) {
         </div>
       </div>
       
-      <div className="viewer-canvas" style={{ background: viewerState.backgroundColor }}>
+      <div 
+        className="viewer-canvas" 
+        style={{ background: themeColors.viewerBg }}
+      >
         <Canvas
           camera={{
             position: [bounds.size * 1.5, bounds.size * 1.2, bounds.size * 1.5],
@@ -200,23 +272,20 @@ export function Viewer({ onCapture }: ViewerProps) {
           <directionalLight position={[-50, 30, -50]} intensity={0.3} />
           <pointLight position={[0, 50, 0]} intensity={0.5} />
           
-          {/* Model */}
-          <Model geometry={geometry} wireframe={viewerState.wireframe} />
+          {/* Model with theme colors */}
+          <Model 
+            geometry={geometry} 
+            wireframe={viewerState.wireframe}
+            modelColor={themeColors.modelColor}
+            modelEmissive={themeColors.modelEmissive}
+          />
           
-          {/* Grid */}
+          {/* Grid with theme colors */}
           {viewerState.showGrid && (
-            <Grid
-              args={[200, 200]}
+            <ThemedGrid
               position={[0, -bounds.size / 2 - 1, 0]}
-              cellSize={10}
-              cellThickness={0.5}
-              cellColor="#2a2a4a"
-              sectionSize={50}
-              sectionThickness={1}
-              sectionColor="#3a3a6a"
-              fadeDistance={400}
-              fadeStrength={1}
-              followCamera={false}
+              cellColor={themeColors.gridCell}
+              sectionColor={themeColors.gridSection}
             />
           )}
           

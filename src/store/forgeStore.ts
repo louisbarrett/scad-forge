@@ -26,8 +26,33 @@ const STORAGE_KEYS = {
   THEME_CONFIG: 'scad-forge-theme-config',
 } as const;
 
-// Theme presets inspired by themegen
-export const THEME_PRESETS: Record<ThemePreset, { name: string; colors: Record<string, string> }> = {
+// Theme presets inspired by themegen - now with 3D viewer colors
+export interface ThemeColors {
+  // UI Colors
+  '--bg-deepest': string;
+  '--bg-deep': string;
+  '--bg-dark': string;
+  '--bg-medium': string;
+  '--bg-light': string;
+  '--bg-lighter': string;
+  '--accent-primary': string;
+  '--accent-secondary': string;
+  '--accent-success': string;
+  '--accent-warning': string;
+  '--accent-danger': string;
+  '--text-bright': string;
+  '--text-normal': string;
+  '--text-dim': string;
+  '--text-muted': string;
+  // 3D Viewer Colors
+  '--viewer-bg': string;
+  '--viewer-model-color': string;
+  '--viewer-model-emissive': string;
+  '--viewer-grid-cell': string;
+  '--viewer-grid-section': string;
+}
+
+export const THEME_PRESETS: Record<ThemePreset, { name: string; colors: ThemeColors }> = {
   cyberpunk: {
     name: 'Cyberpunk',
     colors: {
@@ -46,6 +71,12 @@ export const THEME_PRESETS: Record<ThemePreset, { name: string; colors: Record<s
       '--text-normal': '#c8c8d8',
       '--text-dim': '#8888a8',
       '--text-muted': '#5a5a7a',
+      // 3D Viewer - Cyan/Purple neon
+      '--viewer-bg': '#0a0a14',
+      '--viewer-model-color': '#00d9ff',
+      '--viewer-model-emissive': '#002233',
+      '--viewer-grid-cell': '#1a1a3a',
+      '--viewer-grid-section': '#2a2a5a',
     },
   },
   midnight: {
@@ -66,6 +97,12 @@ export const THEME_PRESETS: Record<ThemePreset, { name: string; colors: Record<s
       '--text-normal': '#c9d1d9',
       '--text-dim': '#8b949e',
       '--text-muted': '#6e7681',
+      // 3D Viewer - GitHub dark blue
+      '--viewer-bg': '#0d1117',
+      '--viewer-model-color': '#58a6ff',
+      '--viewer-model-emissive': '#0d2744',
+      '--viewer-grid-cell': '#21262d',
+      '--viewer-grid-section': '#30363d',
     },
   },
   aurora: {
@@ -86,6 +123,12 @@ export const THEME_PRESETS: Record<ThemePreset, { name: string; colors: Record<s
       '--text-normal': '#ccfbf1',
       '--text-dim': '#5eead4',
       '--text-muted': '#14b8a6',
+      // 3D Viewer - Northern lights teal/purple
+      '--viewer-bg': '#0a1014',
+      '--viewer-model-color': '#00ffc8',
+      '--viewer-model-emissive': '#003322',
+      '--viewer-grid-cell': '#1a2533',
+      '--viewer-grid-section': '#2a4050',
     },
   },
   ember: {
@@ -106,6 +149,12 @@ export const THEME_PRESETS: Record<ThemePreset, { name: string; colors: Record<s
       '--text-normal': '#fed7aa',
       '--text-dim': '#fdba74',
       '--text-muted': '#fb923c',
+      // 3D Viewer - Warm orange/gold
+      '--viewer-bg': '#120a08',
+      '--viewer-model-color': '#ff6b35',
+      '--viewer-model-emissive': '#331500',
+      '--viewer-grid-cell': '#2e1a15',
+      '--viewer-grid-section': '#4a2820',
     },
   },
   forest: {
@@ -126,6 +175,12 @@ export const THEME_PRESETS: Record<ThemePreset, { name: string; colors: Record<s
       '--text-normal': '#bbf7d0',
       '--text-dim': '#86efac',
       '--text-muted': '#4ade80',
+      // 3D Viewer - Forest green
+      '--viewer-bg': '#080e0a',
+      '--viewer-model-color': '#22c55e',
+      '--viewer-model-emissive': '#0a2210',
+      '--viewer-grid-cell': '#16251e',
+      '--viewer-grid-section': '#1e3828',
     },
   },
   ocean: {
@@ -146,6 +201,12 @@ export const THEME_PRESETS: Record<ThemePreset, { name: string; colors: Record<s
       '--text-normal': '#e2e8f0',
       '--text-dim': '#94a3b8',
       '--text-muted': '#64748b',
+      // 3D Viewer - Deep blue ocean
+      '--viewer-bg': '#020617',
+      '--viewer-model-color': '#0ea5e9',
+      '--viewer-model-emissive': '#021a2f',
+      '--viewer-grid-cell': '#1e293b',
+      '--viewer-grid-section': '#334155',
     },
   },
 };
@@ -566,19 +627,32 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
       id,
       timestamp: Date.now(),
     };
-    set((state) => ({
-      chatMessages: [...state.chatMessages, fullMessage],
-    }));
+    set((state) => {
+      const newMessages = [...state.chatMessages, fullMessage];
+      // Persist user messages immediately (assistant messages are persisted on complete)
+      if (message.role === 'user') {
+        saveChatMessages(newMessages);
+      }
+      return { chatMessages: newMessages };
+    });
     return id;
   },
   
-  updateChatMessage: (id, updates) => set((state) => ({
-    chatMessages: state.chatMessages.map((msg) =>
-      msg.id === id ? { ...msg, ...updates } : msg
-    ),
-  })),
+  updateChatMessage: (id, updates) => {
+    set((state) => {
+      const newMessages = state.chatMessages.map((msg) =>
+        msg.id === id ? { ...msg, ...updates } : msg
+      );
+      // Persist when message is complete or errored (not during streaming)
+      if (updates.status === 'complete' || updates.status === 'error') {
+        saveChatMessages(newMessages);
+      }
+      return { chatMessages: newMessages };
+    });
+  },
   
   appendToChatMessage: (id, content) => set((state) => ({
+    // Don't persist during streaming - too many writes
     chatMessages: state.chatMessages.map((msg) =>
       msg.id === id ? { ...msg, content: msg.content + content } : msg
     ),

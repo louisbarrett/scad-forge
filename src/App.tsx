@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useState, useRef, MouseEvent as ReactMouseEvent } from 'react';
 import { CodeEditor } from './components/CodeEditor';
 import { Viewer } from './components/Viewer';
 import { MutationPanel } from './components/MutationPanel';
@@ -12,9 +12,49 @@ import './App.css';
 
 type RightPanel = 'chat' | 'mutations' | 'history' | 'vlm';
 
+// Storage key for panel sizes
+const PANEL_SIZES_KEY = 'scad-forge-panel-sizes';
+
+interface PanelSizes {
+  editorWidth: number;
+  viewerWidth: number;
+  sideWidth: number;
+}
+
+const DEFAULT_PANEL_SIZES: PanelSizes = {
+  editorWidth: 33,
+  viewerWidth: 34,
+  sideWidth: 33,
+};
+
+function loadPanelSizes(): PanelSizes {
+  try {
+    const stored = localStorage.getItem(PANEL_SIZES_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.warn('Failed to load panel sizes:', e);
+  }
+  return DEFAULT_PANEL_SIZES;
+}
+
+function savePanelSizes(sizes: PanelSizes): void {
+  try {
+    localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(sizes));
+  } catch (e) {
+    console.warn('Failed to save panel sizes:', e);
+  }
+}
+
 function App() {
   const [rightPanel, setRightPanel] = useState<RightPanel>('chat');
   const [engineReady, setEngineReady] = useState(false);
+  
+  // Resizable panel state
+  const [panelSizes, setPanelSizes] = useState<PanelSizes>(loadPanelSizes);
+  const [isDragging, setIsDragging] = useState<'left' | 'right' | null>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   
   const {
     code,
@@ -180,6 +220,79 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleCompile, handleUndo, handleRedo]);
   
+  // Panel resize handlers
+  const handleResizeStart = useCallback((handle: 'left' | 'right') => (e: ReactMouseEvent) => {
+    e.preventDefault();
+    setIsDragging(handle);
+  }, []);
+  
+  const handleResizeMove = useCallback((e: globalThis.MouseEvent) => {
+    if (!isDragging || !mainRef.current) return;
+    
+    const mainRect = mainRef.current.getBoundingClientRect();
+    const totalWidth = mainRect.width;
+    const mouseX = e.clientX - mainRect.left;
+    const mousePercent = (mouseX / totalWidth) * 100;
+    
+    setPanelSizes(prev => {
+      let newSizes = { ...prev };
+      
+      if (isDragging === 'left') {
+        // Dragging the left handle (between editor and viewer)
+        const editorWidth = Math.max(15, Math.min(50, mousePercent));
+        const remaining = 100 - editorWidth;
+        const viewerRatio = prev.viewerWidth / (prev.viewerWidth + prev.sideWidth);
+        newSizes = {
+          editorWidth,
+          viewerWidth: remaining * viewerRatio,
+          sideWidth: remaining * (1 - viewerRatio),
+        };
+      } else if (isDragging === 'right') {
+        // Dragging the right handle (between viewer and side panel)
+        const sideWidth = Math.max(15, Math.min(50, 100 - mousePercent));
+        const remaining = 100 - sideWidth;
+        const editorRatio = prev.editorWidth / (prev.editorWidth + prev.viewerWidth);
+        newSizes = {
+          editorWidth: remaining * editorRatio,
+          viewerWidth: remaining * (1 - editorRatio),
+          sideWidth,
+        };
+      }
+      
+      return newSizes;
+    });
+  }, [isDragging]);
+  
+  const handleResizeEnd = useCallback(() => {
+    if (isDragging) {
+      savePanelSizes(panelSizes);
+      setIsDragging(null);
+    }
+  }, [isDragging, panelSizes]);
+  
+  // Global mouse event listeners for resizing
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleResizeMove);
+      window.addEventListener('mouseup', handleResizeEnd);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      
+      return () => {
+        window.removeEventListener('mousemove', handleResizeMove);
+        window.removeEventListener('mouseup', handleResizeEnd);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+    }
+  }, [isDragging, handleResizeMove, handleResizeEnd]);
+  
+  // Double-click to reset panel sizes
+  const handleDoubleClick = useCallback(() => {
+    setPanelSizes(DEFAULT_PANEL_SIZES);
+    savePanelSizes(DEFAULT_PANEL_SIZES);
+  }, []);
+  
   return (
     <div className="app">
       {/* Ambient Background Effects */}
@@ -261,16 +374,44 @@ function App() {
         </nav>
       </header>
       
-      <main className="app-main">
-        <div className="editor-pane">
+      <main className="app-main" ref={mainRef}>
+        {/* Resize overlay when dragging */}
+        {isDragging && <div className="resize-overlay" />}
+        
+        <div 
+          className="editor-pane" 
+          style={{ width: `${panelSizes.editorWidth}%` }}
+        >
           <CodeEditor onCompile={handleCompile} />
         </div>
         
-        <div className="viewer-pane">
+        {/* Left resize handle */}
+        <div 
+          className={`resize-handle resize-handle-h ${isDragging === 'left' ? 'dragging' : ''}`}
+          onMouseDown={handleResizeStart('left')}
+          onDoubleClick={handleDoubleClick}
+          title="Drag to resize • Double-click to reset"
+        />
+        
+        <div 
+          className="viewer-pane"
+          style={{ width: `${panelSizes.viewerWidth}%` }}
+        >
           <Viewer onCapture={handleCapture} />
         </div>
         
-        <div className="side-pane">
+        {/* Right resize handle */}
+        <div 
+          className={`resize-handle resize-handle-h ${isDragging === 'right' ? 'dragging' : ''}`}
+          onMouseDown={handleResizeStart('right')}
+          onDoubleClick={handleDoubleClick}
+          title="Drag to resize • Double-click to reset"
+        />
+        
+        <div 
+          className="side-pane"
+          style={{ width: `${panelSizes.sideWidth}%` }}
+        >
           <div className="panel-tabs">
             <button
               className={`panel-tab ${rightPanel === 'chat' ? 'active' : ''}`}

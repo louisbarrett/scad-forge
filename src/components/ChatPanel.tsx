@@ -7,10 +7,42 @@ interface MessageBubbleProps {
   message: ChatMessage;
   onApplyCode?: (code: string) => void;
   onProposeMutation?: (code: string) => void;
+  autoApplyEnabled?: boolean;
+  wasAutoApplied?: boolean;
 }
 
-function MessageBubble({ message, onApplyCode, onProposeMutation }: MessageBubbleProps) {
+// Loading wave animation component
+function LoadingWave() {
+  return (
+    <div className="loading-wave-container">
+      <div className="loading-wave">
+        <div className="loading-wave-text">
+          <span className="wave-icon">🤖</span>
+          <span>Generating response...</span>
+        </div>
+        <div className="loading-wave-bars">
+          {[...Array(12)].map((_, i) => (
+            <div
+              key={i}
+              className="wave-bar"
+              style={{ animationDelay: `${i * 0.08}s` }}
+            />
+          ))}
+        </div>
+        <div className="loading-wave-progress">
+          <div className="wave-progress-track">
+            <div className="wave-progress-fill" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ message, onApplyCode, onProposeMutation, autoApplyEnabled, wasAutoApplied }: MessageBubbleProps) {
   const extractedCode = message.role === 'assistant' ? extractCodeFromResponse(message.content) : null;
+  const isStreaming = message.status === 'streaming';
+  const showAutoAppliedBadge = wasAutoApplied && extractedCode && message.status === 'complete';
   
   // Format message content with code highlighting
   const formatContent = (content: string) => {
@@ -23,18 +55,21 @@ function MessageBubble({ message, onApplyCode, onProposeMutation }: MessageBubbl
         const match = part.match(/```(\w*)\n?([\s\S]*?)```/);
         if (match) {
           const [, lang, code] = match;
+          const isOpenSCAD = lang === 'openscad';
           return (
             <div key={i} className="message-code-block">
               <div className="code-header">
                 <span className="code-lang">{lang || 'code'}</span>
-                {onApplyCode && lang === 'openscad' && (
+                {isOpenSCAD && wasAutoApplied ? (
+                  <span className="auto-applied-badge">✓ Auto-Applied</span>
+                ) : isOpenSCAD && onApplyCode && !autoApplyEnabled ? (
                   <button
                     className="apply-code-btn"
                     onClick={() => onApplyCode(code.trim())}
                   >
                     ⚡ Apply Changes
                   </button>
-                )}
+                ) : null}
               </div>
               <pre><code>{code.trim()}</code></pre>
             </div>
@@ -52,7 +87,7 @@ function MessageBubble({ message, onApplyCode, onProposeMutation }: MessageBubbl
   };
   
   return (
-    <div className={`message-bubble ${message.role}`}>
+    <div className={`message-bubble ${message.role} ${isStreaming ? 'streaming' : ''} ${showAutoAppliedBadge ? 'auto-applied' : ''}`}>
       <div className="message-header">
         <span className="message-role">
           {message.role === 'user' ? '👤 You' : '🤖 Assistant'}
@@ -63,6 +98,8 @@ function MessageBubble({ message, onApplyCode, onProposeMutation }: MessageBubbl
                '🔄 Vision+Planning'}
             </span>
           )}
+          {isStreaming && <span className="streaming-indicator">Generating...</span>}
+          {showAutoAppliedBadge && <span className="auto-applied-indicator">✓ Applied</span>}
         </span>
         <span className="message-time">
           {new Date(message.timestamp).toLocaleTimeString()}
@@ -70,18 +107,16 @@ function MessageBubble({ message, onApplyCode, onProposeMutation }: MessageBubbl
       </div>
       
       <div className="message-content">
-        {message.status === 'pending' ? (
-          <div className="message-loading">
-            <span className="loading-dot">●</span>
-            <span className="loading-dot">●</span>
-            <span className="loading-dot">●</span>
-          </div>
+        {message.status === 'pending' || isStreaming ? (
+          <LoadingWave />
         ) : message.status === 'error' ? (
           <div className="message-error">
             ❌ {message.error || 'An error occurred'}
           </div>
         ) : (
-          formatContent(message.content)
+          <div className="message-content-reveal">
+            {formatContent(message.content)}
+          </div>
         )}
       </div>
       
@@ -91,7 +126,7 @@ function MessageBubble({ message, onApplyCode, onProposeMutation }: MessageBubbl
         </div>
       )}
       
-      {extractedCode && message.status === 'complete' && (
+      {extractedCode && message.status === 'complete' && !wasAutoApplied && (
         <div className="message-actions">
           {onApplyCode && (
             <button
@@ -424,6 +459,7 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
   const [includeCode, setIncludeCode] = useState(true);
   const [includeImage, setIncludeImage] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [autoAppliedMessages, setAutoAppliedMessages] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
@@ -441,6 +477,21 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
     updateLLMConfig,
     addMutation,
   } = useForgeStore();
+  
+  // Quick toggle handlers for auto-apply and auto-render
+  const toggleAutoApply = useCallback(() => {
+    const newValue = !llmConfig.autoApply;
+    updateLLMConfig({ autoApply: newValue });
+    const llmService = getLLMService();
+    llmService.updateConfig({ autoApply: newValue });
+  }, [llmConfig.autoApply, updateLLMConfig]);
+  
+  const toggleAutoRender = useCallback(() => {
+    const newValue = !llmConfig.autoRender;
+    updateLLMConfig({ autoRender: newValue });
+    const llmService = getLLMService();
+    llmService.updateConfig({ autoRender: newValue });
+  }, [llmConfig.autoRender, updateLLMConfig]);
   
   // Initialize LLM service with stored config on mount
   useEffect(() => {
@@ -512,6 +563,9 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
             // Apply the code
             useForgeStore.getState().setCode(extractedCode);
             useForgeStore.getState().pushPatch('LLM Chat: Auto-applied code', extractedCode, 'llm');
+            
+            // Mark this message as auto-applied
+            setAutoAppliedMessages(prev => new Set([...prev, assistantMsgId]));
             
             // Auto-render if enabled
             if (llmConfig.autoRender && onCompile) {
@@ -621,6 +675,8 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
                 message={msg}
                 onApplyCode={msg.role === 'assistant' ? handleApplyCode : undefined}
                 onProposeMutation={msg.role === 'assistant' ? handleProposeMutation : undefined}
+                autoApplyEnabled={llmConfig.autoApply}
+                wasAutoApplied={autoAppliedMessages.has(msg.id)}
               />
             ))}
             <div ref={messagesEndRef} />
@@ -648,6 +704,23 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
             <span className="option-icon">📷</span> Include Image
             {!latestCapture && <span className="option-hint">(capture first)</span>}
           </label>
+          
+          <div className="option-divider" />
+          
+          <button 
+            className={`option-toggle automation-toggle ${llmConfig.autoApply ? 'active' : ''}`}
+            onClick={toggleAutoApply}
+            title={llmConfig.autoApply ? 'Auto-apply enabled - code will be applied automatically' : 'Auto-apply disabled - you\'ll need to manually apply code'}
+          >
+            <span className="option-icon">⚡</span> Auto-Apply
+          </button>
+          <button 
+            className={`option-toggle automation-toggle ${llmConfig.autoRender ? 'active' : ''}`}
+            onClick={toggleAutoRender}
+            title={llmConfig.autoRender ? 'Auto-render enabled - model will render after changes' : 'Auto-render disabled - you\'ll need to manually compile'}
+          >
+            <span className="option-icon">▶</span> Auto-Render
+          </button>
         </div>
         
         <div className="input-container">
