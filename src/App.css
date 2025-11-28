@@ -28,15 +28,15 @@
   --text-dim: #8888a8;
   --text-muted: #5a5a7a;
   
-  /* Borders */
-  --border-subtle: #2a2a4a;
-  --border-medium: #3a3a5a;
-  --border-bright: #4a4a7a;
+  /* Borders - derived from bg-lighter for theme consistency */
+  --border-subtle: var(--bg-lighter);
+  --border-medium: color-mix(in srgb, var(--bg-lighter), var(--text-muted) 20%);
+  --border-bright: color-mix(in srgb, var(--bg-lighter), var(--text-dim) 30%);
   
-  /* Glow effects */
-  --glow-primary: 0 0 20px rgba(0, 217, 255, 0.3);
-  --glow-secondary: 0 0 20px rgba(123, 45, 255, 0.3);
-  --glow-success: 0 0 20px rgba(0, 255, 136, 0.3);
+  /* Glow effects - derived from accent colors */
+  --glow-primary: 0 0 20px color-mix(in srgb, var(--accent-primary), transparent 70%);
+  --glow-secondary: 0 0 20px color-mix(in srgb, var(--accent-secondary), transparent 70%);
+  --glow-success: 0 0 20px color-mix(in srgb, var(--accent-success), transparent 70%);
   
   /* 3D Viewer Theme Colors */
   --viewer-bg: #0d0d1a;
@@ -45,6 +45,22 @@
   --viewer-grid-cell: #2a2a4a;
   --viewer-grid-section: #3a3a6a;
   --viewer-ambient-light: 0.4;
+  
+  /* Editor Theme Colors (Monaco) */
+  --editor-bg: #0d0d1a;
+  --editor-fg: #c8c8d8;
+  --editor-line-highlight: #1a1a2e;
+  --editor-selection: #264f78;
+  --editor-cursor: #00d9ff;
+  --editor-line-number: #4a4a6a;
+  --editor-line-number-active: #00d9ff;
+  --editor-comment: #6a9955;
+  --editor-keyword: #c586c0;
+  --editor-function: #dcdcaa;
+  --editor-variable: #9cdcfe;
+  --editor-number: #b5cea8;
+  --editor-string: #ce9178;
+  --editor-operator: #d4d4d4;
   
   /* Layout */
   --header-height: 52px;
@@ -453,6 +469,25 @@ body {
 .theme-selector select option {
   background: var(--bg-dark);
   color: var(--text-normal);
+  padding: 8px 12px;
+}
+
+.theme-selector select optgroup {
+  background: var(--bg-medium);
+  color: var(--text-dim);
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 0;
+}
+
+.theme-selector select optgroup option {
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: normal;
+  padding-left: 16px;
 }
 
 /* ============================================

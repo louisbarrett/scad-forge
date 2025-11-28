@@ -3,7 +3,14 @@
 import type * as THREE from 'three';
 
 // Theme Configuration
-export type ThemePreset = 'cyberpunk' | 'midnight' | 'aurora' | 'ember' | 'forest' | 'ocean';
+// Dark themes
+export type ThemeDark = 'cyberpunk' | 'midnight' | 'aurora' | 'ember' | 'forest' | 'ocean' | 'nord' | 'dracula' | 'monokai' | 'tokyoNight';
+// Light themes  
+export type ThemeLight = 'solarizedLight' | 'paperLight' | 'daybreak' | 'sepia';
+// High-contrast themes
+export type ThemeHighContrast = 'hcDark' | 'hcLight' | 'matrix' | 'terminal';
+
+export type ThemePreset = ThemeDark | ThemeLight | ThemeHighContrast;
 
 export interface ThemeConfig {
   preset: ThemePreset;

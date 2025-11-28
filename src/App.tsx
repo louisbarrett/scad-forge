@@ -580,9 +580,30 @@ function App() {
               value={themeConfig.preset} 
               onChange={(e) => handleThemeChange(e.target.value as ThemePreset)}
             >
-              {Object.entries(THEME_PRESETS).map(([key, theme]) => (
-                <option key={key} value={key}>{theme.name}</option>
-              ))}
+              <optgroup label="🌙 Dark Themes">
+                {Object.entries(THEME_PRESETS)
+                  .filter(([, theme]) => theme.category === 'dark')
+                  .map(([key, theme]) => (
+                    <option key={key} value={key}>{theme.name}</option>
+                  ))
+                }
+              </optgroup>
+              <optgroup label="☀️ Light Themes">
+                {Object.entries(THEME_PRESETS)
+                  .filter(([, theme]) => theme.category === 'light')
+                  .map(([key, theme]) => (
+                    <option key={key} value={key}>{theme.name}</option>
+                  ))
+                }
+              </optgroup>
+              <optgroup label="🔳 High Contrast">
+                {Object.entries(THEME_PRESETS)
+                  .filter(([, theme]) => theme.category === 'high-contrast')
+                  .map(([key, theme]) => (
+                    <option key={key} value={key}>{theme.name}</option>
+                  ))
+                }
+              </optgroup>
             </select>
           </div>
           

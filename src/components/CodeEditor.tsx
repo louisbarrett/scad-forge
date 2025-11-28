@@ -1,6 +1,6 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useMemo } from 'react';
 import Editor, { type OnMount, type OnChange } from '@monaco-editor/react';
-import type { editor } from 'monaco-editor';
+import type { editor, Monaco } from 'monaco-editor';
 import { useForgeStore } from '../store/forgeStore';
 
 // OpenSCAD language definition for Monaco
@@ -102,31 +102,77 @@ const OPENSCAD_LANGUAGE_DEF = {
   },
 };
 
-// Monaco theme for SCAD Forge
-const SCAD_FORGE_THEME: editor.IStandaloneThemeData = {
-  base: 'vs-dark',
-  inherit: true,
-  rules: [
-    { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
-    { token: 'keyword', foreground: 'C586C0' },
-    { token: 'support.function', foreground: 'DCDCAA' },
-    { token: 'variable.predefined', foreground: '9CDCFE', fontStyle: 'bold' },
-    { token: 'number', foreground: 'B5CEA8' },
-    { token: 'number.float', foreground: 'B5CEA8' },
-    { token: 'string', foreground: 'CE9178' },
-    { token: 'operator', foreground: 'D4D4D4' },
-    { token: 'identifier', foreground: '9CDCFE' },
-  ],
-  colors: {
-    'editor.background': '#0d0d1a',
-    'editor.foreground': '#D4D4D4',
-    'editor.lineHighlightBackground': '#1a1a2e',
-    'editor.selectionBackground': '#264F78',
-    'editorCursor.foreground': '#00d9ff',
-    'editorLineNumber.foreground': '#4a4a6a',
-    'editorLineNumber.activeForeground': '#00d9ff',
-  },
-};
+// Helper to get CSS variable value
+function getCSSVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// Helper to convert hex color to Monaco format (without #)
+function hexToMonaco(hex: string): string {
+  return hex.replace('#', '').toUpperCase();
+}
+
+// Determine if a color is light or dark for base theme selection
+function isLightColor(hex: string): boolean {
+  const color = hex.replace('#', '');
+  const r = parseInt(color.substring(0, 2), 16);
+  const g = parseInt(color.substring(2, 4), 16);
+  const b = parseInt(color.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5;
+}
+
+// Create dynamic Monaco theme from CSS variables
+function createDynamicTheme(): editor.IStandaloneThemeData {
+  const editorBg = getCSSVar('--editor-bg') || '#0d0d1a';
+  const editorFg = getCSSVar('--editor-fg') || '#c8c8d8';
+  const lineHighlight = getCSSVar('--editor-line-highlight') || '#1a1a2e';
+  const selection = getCSSVar('--editor-selection') || '#264f78';
+  const cursor = getCSSVar('--editor-cursor') || '#00d9ff';
+  const lineNumber = getCSSVar('--editor-line-number') || '#4a4a6a';
+  const lineNumberActive = getCSSVar('--editor-line-number-active') || '#00d9ff';
+  const comment = getCSSVar('--editor-comment') || '#6a9955';
+  const keyword = getCSSVar('--editor-keyword') || '#c586c0';
+  const func = getCSSVar('--editor-function') || '#dcdcaa';
+  const variable = getCSSVar('--editor-variable') || '#9cdcfe';
+  const number = getCSSVar('--editor-number') || '#b5cea8';
+  const string = getCSSVar('--editor-string') || '#ce9178';
+  const operator = getCSSVar('--editor-operator') || '#d4d4d4';
+
+  // Determine base theme based on background luminance
+  const baseTheme = isLightColor(editorBg) ? 'vs' : 'vs-dark';
+
+  return {
+    base: baseTheme,
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: hexToMonaco(comment), fontStyle: 'italic' },
+      { token: 'keyword', foreground: hexToMonaco(keyword) },
+      { token: 'support.function', foreground: hexToMonaco(func) },
+      { token: 'variable.predefined', foreground: hexToMonaco(variable), fontStyle: 'bold' },
+      { token: 'number', foreground: hexToMonaco(number) },
+      { token: 'number.float', foreground: hexToMonaco(number) },
+      { token: 'string', foreground: hexToMonaco(string) },
+      { token: 'operator', foreground: hexToMonaco(operator) },
+      { token: 'identifier', foreground: hexToMonaco(variable) },
+      { token: 'delimiter', foreground: hexToMonaco(operator) },
+    ],
+    colors: {
+      'editor.background': editorBg,
+      'editor.foreground': editorFg,
+      'editor.lineHighlightBackground': lineHighlight,
+      'editor.selectionBackground': selection,
+      'editorCursor.foreground': cursor,
+      'editorLineNumber.foreground': lineNumber,
+      'editorLineNumber.activeForeground': lineNumberActive,
+      'editorIndentGuide.background': lineNumber,
+      'editorIndentGuide.activeBackground': lineNumberActive,
+      'editor.selectionHighlightBackground': selection + '66',
+      'editorBracketMatch.background': selection + '44',
+      'editorBracketMatch.border': cursor,
+    },
+  };
+}
 
 interface CodeEditorProps {
   onCompile?: () => void;
@@ -134,7 +180,9 @@ interface CodeEditorProps {
 
 export function CodeEditor({ onCompile }: CodeEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
   const compileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const themeVersionRef = useRef(0);
   
   const {
     code,
@@ -142,6 +190,7 @@ export function CodeEditor({ onCompile }: CodeEditorProps) {
     editorSettings,
     pendingMutations,
     selectedMutation,
+    themeConfig,
   } = useForgeStore();
   
   // Get preview code (show mutation preview if selected)
@@ -149,16 +198,41 @@ export function CodeEditor({ onCompile }: CodeEditorProps) {
     ? pendingMutations.find(m => m.id === selectedMutation)?.proposedCode ?? code
     : code;
   
+  // Update Monaco theme when app theme changes
+  const updateMonacoTheme = useCallback(() => {
+    if (!monacoRef.current) return;
+    
+    // Increment theme version to create unique theme name
+    themeVersionRef.current += 1;
+    const themeName = `scad-forge-dynamic-${themeVersionRef.current}`;
+    
+    // Create and apply the dynamic theme
+    const dynamicTheme = createDynamicTheme();
+    monacoRef.current.editor.defineTheme(themeName, dynamicTheme);
+    monacoRef.current.editor.setTheme(themeName);
+  }, []);
+  
+  // React to theme changes
+  useEffect(() => {
+    // Small delay to ensure CSS variables are updated
+    const timer = setTimeout(() => {
+      updateMonacoTheme();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [themeConfig.preset, updateMonacoTheme]);
+  
   const handleEditorMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
+    monacoRef.current = monaco;
     
     // Register OpenSCAD language
     monaco.languages.register({ id: 'openscad' });
     monaco.languages.setMonarchTokensProvider('openscad', OPENSCAD_LANGUAGE_DEF as any);
     
-    // Register custom theme
-    monaco.editor.defineTheme('scad-forge', SCAD_FORGE_THEME);
-    monaco.editor.setTheme('scad-forge');
+    // Create and apply dynamic theme based on CSS variables
+    const dynamicTheme = createDynamicTheme();
+    monaco.editor.defineTheme('scad-forge-dynamic-0', dynamicTheme);
+    monaco.editor.setTheme('scad-forge-dynamic-0');
     
     // Add keyboard shortcuts
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
