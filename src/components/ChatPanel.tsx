@@ -56,6 +56,13 @@ function MessageBubble({ message, onApplyCode, onProposeMutation }: MessageBubbl
       <div className="message-header">
         <span className="message-role">
           {message.role === 'user' ? '👤 You' : '🤖 Assistant'}
+          {message.modelUsed && (
+            <span className="message-model-badge">
+              {message.modelUsed === 'vision' ? '👁 Vision' : 
+               message.modelUsed === 'planning' ? '⚙️ Planning' : 
+               '🔄 Vision+Planning'}
+            </span>
+          )}
         </span>
         <span className="message-time">
           {new Date(message.timestamp).toLocaleTimeString()}
@@ -210,6 +217,44 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
     { name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: '' },
   ];
   
+  // Helper to render model selector
+  const renderModelSelector = (
+    label: string,
+    icon: string,
+    description: string,
+    value: string,
+    onChange: (value: string) => void
+  ) => (
+    <div className="model-config-item">
+      <label>
+        <span className="model-type-icon">{icon}</span>
+        {label}
+      </label>
+      <div className="model-type-desc">{description}</div>
+      {availableModels.length > 0 ? (
+        <div className="model-selector">
+          <select value={value} onChange={(e) => onChange(e.target.value)}>
+            {!availableModels.find(m => m.id === value) && value && (
+              <option value={value}>{value}</option>
+            )}
+            {availableModels.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name} {model.owned_by ? `(${model.owned_by})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={modelsLoading ? 'Loading models...' : 'Enter model name'}
+        />
+      )}
+    </div>
+  );
+  
   return (
     <div className="settings-modal-overlay" onClick={onClose}>
       <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
@@ -261,7 +306,7 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
           
           <div className="settings-field model-field">
             <div className="label-row">
-              <label>Model</label>
+              <label>Available Models</label>
               <button 
                 className="refresh-btn" 
                 onClick={handleRefreshModels}
@@ -277,33 +322,31 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                 <span className="error-icon">⚠️</span>
                 <span>{modelsError}</span>
               </div>
-            ) : null}
-            
-            {availableModels.length > 0 ? (
-              <div className="model-selector">
-                <select
-                  value={localConfig.model}
-                  onChange={(e) => setLocalConfig({ ...localConfig, model: e.target.value })}
-                >
-                  {!availableModels.find(m => m.id === localConfig.model) && localConfig.model && (
-                    <option value={localConfig.model}>{localConfig.model}</option>
-                  )}
-                  {availableModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name} {model.owned_by ? `(${model.owned_by})` : ''}
-                    </option>
-                  ))}
-                </select>
-                <span className="model-count">{availableModels.length} models available</span>
-              </div>
-            ) : (
-              <input
-                type="text"
-                value={localConfig.model}
-                onChange={(e) => setLocalConfig({ ...localConfig, model: e.target.value })}
-                placeholder={modelsLoading ? 'Loading models...' : 'Enter model name'}
-              />
+            ) : availableModels.length > 0 && (
+              <span className="model-count">{availableModels.length} models available</span>
             )}
+          </div>
+          
+          {/* Multi-model configuration */}
+          <div className="model-config-section">
+            <label className="section-label">Model Configuration</label>
+            <div className="model-config-grid">
+              {renderModelSelector(
+                'Planning Model',
+                '⚙️',
+                'Generates OpenSCAD code from text descriptions',
+                localConfig.planningModel || localConfig.model,
+                (value) => setLocalConfig({ ...localConfig, planningModel: value })
+              )}
+              
+              {renderModelSelector(
+                'Vision Model',
+                '👁',
+                'Analyzes images to understand 3D geometry',
+                localConfig.visionModel || localConfig.model,
+                (value) => setLocalConfig({ ...localConfig, visionModel: value })
+              )}
+            </div>
           </div>
           
           <div className="settings-row">
@@ -341,8 +384,10 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                   onChange={(e) => setLocalConfig({ ...localConfig, autoApply: e.target.checked })}
                 />
                 <span className="toggle-icon">⚡</span>
-                <span className="toggle-label">Auto-Apply Code</span>
-                <span className="toggle-hint">Apply LLM code changes automatically</span>
+                <div>
+                  <span className="toggle-label">Auto-Apply Code</span>
+                  <span className="toggle-hint">Apply LLM code changes automatically</span>
+                </div>
               </label>
               
               <label className={`toggle-option ${localConfig.autoRender ? 'active' : ''}`}>
@@ -352,8 +397,10 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                   onChange={(e) => setLocalConfig({ ...localConfig, autoRender: e.target.checked })}
                 />
                 <span className="toggle-icon">▶</span>
-                <span className="toggle-label">Auto-Render</span>
-                <span className="toggle-hint">Render after applying changes</span>
+                <div>
+                  <span className="toggle-label">Auto-Render</span>
+                  <span className="toggle-hint">Render after applying changes</span>
+                </div>
               </label>
             </div>
           </div>
@@ -413,11 +460,13 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
   const handleSend = useCallback(async () => {
     if (!input.trim() || isChatStreaming) return;
     
+    const hasImage = includeImage && latestCapture;
+    
     const userMessage = {
       role: 'user' as const,
       content: input.trim(),
       attachedCode: includeCode ? code : undefined,
-      attachedImage: includeImage && latestCapture ? latestCapture.imageDataUrl : undefined,
+      attachedImage: hasImage ? latestCapture.imageDataUrl : undefined,
     };
     
     addChatMessage(userMessage);
@@ -428,6 +477,7 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
       role: 'assistant',
       content: '',
       status: 'pending',
+      modelUsed: hasImage ? 'both' : 'planning',
     });
     
     setChatStreaming(true);
@@ -446,7 +496,7 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
       for await (const chunk of llmService.streamChat(
         messagesForApi,
         code,
-        includeImage && latestCapture ? latestCapture.imageDataUrl : undefined
+        hasImage ? latestCapture.imageDataUrl : undefined
       )) {
         appendToChatMessage(assistantMsgId, chunk);
       }
@@ -637,11 +687,18 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
         <button 
           className="model-indicator clickable"
           onClick={() => setShowSettings(true)}
-          title="Click to change model"
+          title="Click to change models"
         >
-          <span className="model-icon">🤖</span>
-          <span className="model-name">{llmConfig.model || 'No model selected'}</span>
-          <span className="model-url">{new URL(llmConfig.baseUrl).host}</span>
+          <div className="model-indicator-multi">
+            <div className="model-row">
+              <span className="model-row-label">⚙️ Plan:</span>
+              <span className="model-row-value">{llmConfig.planningModel || llmConfig.model || 'Not set'}</span>
+            </div>
+            <div className="model-row">
+              <span className="model-row-label">👁 Vision:</span>
+              <span className="model-row-value">{llmConfig.visionModel || llmConfig.model || 'Not set'}</span>
+            </div>
+          </div>
           <span className="model-edit">⚙️</span>
         </button>
       </div>
@@ -660,4 +717,3 @@ export function ChatPanel({ onCompile }: ChatPanelProps) {
     </div>
   );
 }
-

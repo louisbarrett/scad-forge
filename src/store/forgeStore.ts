@@ -11,6 +11,8 @@ import type {
   SceneCapture,
   ChatMessage,
   LLMConfig,
+  ThemePreset,
+  ThemeConfig,
 } from '../types';
 import { DEFAULT_LLM_CONFIG } from '../services/llm';
 
@@ -21,7 +23,132 @@ const STORAGE_KEYS = {
   CODE: 'scad-forge-code',
   EDITOR_SETTINGS: 'scad-forge-editor-settings',
   VIEWER_STATE: 'scad-forge-viewer-state',
+  THEME_CONFIG: 'scad-forge-theme-config',
 } as const;
+
+// Theme presets inspired by themegen
+export const THEME_PRESETS: Record<ThemePreset, { name: string; colors: Record<string, string> }> = {
+  cyberpunk: {
+    name: 'Cyberpunk',
+    colors: {
+      '--bg-deepest': '#05050a',
+      '--bg-deep': '#0a0a14',
+      '--bg-dark': '#0d0d1a',
+      '--bg-medium': '#12121f',
+      '--bg-light': '#1a1a2e',
+      '--bg-lighter': '#252540',
+      '--accent-primary': '#00d9ff',
+      '--accent-secondary': '#7b2dff',
+      '--accent-success': '#00ff88',
+      '--accent-warning': '#ffaa00',
+      '--accent-danger': '#ff4466',
+      '--text-bright': '#ffffff',
+      '--text-normal': '#c8c8d8',
+      '--text-dim': '#8888a8',
+      '--text-muted': '#5a5a7a',
+    },
+  },
+  midnight: {
+    name: 'Midnight Blue',
+    colors: {
+      '--bg-deepest': '#0a0e14',
+      '--bg-deep': '#0d1117',
+      '--bg-dark': '#161b22',
+      '--bg-medium': '#21262d',
+      '--bg-light': '#30363d',
+      '--bg-lighter': '#484f58',
+      '--accent-primary': '#58a6ff',
+      '--accent-secondary': '#bc8cff',
+      '--accent-success': '#3fb950',
+      '--accent-warning': '#d29922',
+      '--accent-danger': '#f85149',
+      '--text-bright': '#f0f6fc',
+      '--text-normal': '#c9d1d9',
+      '--text-dim': '#8b949e',
+      '--text-muted': '#6e7681',
+    },
+  },
+  aurora: {
+    name: 'Aurora Borealis',
+    colors: {
+      '--bg-deepest': '#0a0f14',
+      '--bg-deep': '#0e151c',
+      '--bg-dark': '#131c27',
+      '--bg-medium': '#1a2533',
+      '--bg-light': '#243040',
+      '--bg-lighter': '#2e3d50',
+      '--accent-primary': '#00ffc8',
+      '--accent-secondary': '#a855f7',
+      '--accent-success': '#4ade80',
+      '--accent-warning': '#fbbf24',
+      '--accent-danger': '#f87171',
+      '--text-bright': '#f0fdfa',
+      '--text-normal': '#ccfbf1',
+      '--text-dim': '#5eead4',
+      '--text-muted': '#14b8a6',
+    },
+  },
+  ember: {
+    name: 'Ember Glow',
+    colors: {
+      '--bg-deepest': '#0f0908',
+      '--bg-deep': '#1a0f0c',
+      '--bg-dark': '#231410',
+      '--bg-medium': '#2e1a15',
+      '--bg-light': '#3d231c',
+      '--bg-lighter': '#4f2f26',
+      '--accent-primary': '#ff6b35',
+      '--accent-secondary': '#f7c948',
+      '--accent-success': '#4ade80',
+      '--accent-warning': '#fbbf24',
+      '--accent-danger': '#ef4444',
+      '--text-bright': '#fff7ed',
+      '--text-normal': '#fed7aa',
+      '--text-dim': '#fdba74',
+      '--text-muted': '#fb923c',
+    },
+  },
+  forest: {
+    name: 'Deep Forest',
+    colors: {
+      '--bg-deepest': '#080c0a',
+      '--bg-deep': '#0c1410',
+      '--bg-dark': '#101c16',
+      '--bg-medium': '#16251e',
+      '--bg-light': '#1e3328',
+      '--bg-lighter': '#284234',
+      '--accent-primary': '#22c55e',
+      '--accent-secondary': '#84cc16',
+      '--accent-success': '#4ade80',
+      '--accent-warning': '#eab308',
+      '--accent-danger': '#dc2626',
+      '--text-bright': '#f0fdf4',
+      '--text-normal': '#bbf7d0',
+      '--text-dim': '#86efac',
+      '--text-muted': '#4ade80',
+    },
+  },
+  ocean: {
+    name: 'Deep Ocean',
+    colors: {
+      '--bg-deepest': '#020617',
+      '--bg-deep': '#0f172a',
+      '--bg-dark': '#1e293b',
+      '--bg-medium': '#334155',
+      '--bg-light': '#475569',
+      '--bg-lighter': '#64748b',
+      '--accent-primary': '#0ea5e9',
+      '--accent-secondary': '#6366f1',
+      '--accent-success': '#10b981',
+      '--accent-warning': '#f59e0b',
+      '--accent-danger': '#ef4444',
+      '--text-bright': '#f8fafc',
+      '--text-normal': '#e2e8f0',
+      '--text-dim': '#94a3b8',
+      '--text-muted': '#64748b',
+    },
+  },
+};
 
 // Load LLM config from localStorage
 function loadLLMConfig(): LLMConfig {
@@ -88,6 +215,39 @@ function persistCode(code: string): void {
   } catch (e) {
     console.warn('Failed to save code to localStorage:', e);
   }
+}
+
+// Load theme config from localStorage
+function loadThemeConfig(): ThemeConfig {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.THEME_CONFIG);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.warn('Failed to load theme config from localStorage:', e);
+  }
+  return { preset: 'cyberpunk' };
+}
+
+// Save theme config to localStorage
+function saveThemeConfig(config: ThemeConfig): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.THEME_CONFIG, JSON.stringify(config));
+  } catch (e) {
+    console.warn('Failed to save theme config to localStorage:', e);
+  }
+}
+
+// Apply theme to document
+export function applyTheme(preset: ThemePreset): void {
+  const theme = THEME_PRESETS[preset];
+  if (!theme) return;
+  
+  const root = document.documentElement;
+  Object.entries(theme.colors).forEach(([prop, value]) => {
+    root.style.setProperty(prop, value);
+  });
 }
 
 // Default OpenSCAD code with AZAI constants
@@ -170,6 +330,9 @@ interface ForgeState {
   llmConfig: LLMConfig;
   isChatStreaming: boolean;
   
+  // Theme state
+  themeConfig: ThemeConfig;
+  
   // Actions
   setCode: (code: string) => void;
   saveCode: () => void;
@@ -210,6 +373,9 @@ interface ForgeState {
   saveChatSnapshot: () => void;
   setChatStreaming: (streaming: boolean) => void;
   updateLLMConfig: (config: Partial<LLMConfig>) => void;
+  
+  // Theme actions
+  setTheme: (preset: ThemePreset) => void;
   
   // Reset
   reset: () => void;
@@ -259,6 +425,9 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   chatHistoryIndex: -1,
   llmConfig: loadLLMConfig(),
   isChatStreaming: false,
+  
+  // Theme state
+  themeConfig: loadThemeConfig(),
   
   // Actions
   setCode: (code) => {
@@ -468,6 +637,14 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     const newConfig = { ...state.llmConfig, ...config };
     saveLLMConfig(newConfig);
     set({ llmConfig: newConfig });
+  },
+  
+  // Theme actions
+  setTheme: (preset) => {
+    const newConfig: ThemeConfig = { preset };
+    saveThemeConfig(newConfig);
+    applyTheme(preset);
+    set({ themeConfig: newConfig });
   },
   
   reset: () => {

@@ -5,9 +5,9 @@ import { MutationPanel } from './components/MutationPanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import { VLMPanel } from './components/VLMPanel';
 import { ChatPanel } from './components/ChatPanel';
-import { useForgeStore } from './store/forgeStore';
+import { useForgeStore, THEME_PRESETS, applyTheme } from './store/forgeStore';
 import { getEngine } from './engine/openscad';
-import type { SceneCapture } from './types';
+import type { SceneCapture, ThemePreset } from './types';
 import './App.css';
 
 type RightPanel = 'chat' | 'mutations' | 'history' | 'vlm';
@@ -18,12 +18,18 @@ function App() {
   
   const {
     code,
+    themeConfig,
+    setTheme,
     setRenderResult,
     setEngineStatus,
     addCapture,
-    addMutation,
     pushPatch,
   } = useForgeStore();
+  
+  // Initialize theme on mount
+  useEffect(() => {
+    applyTheme(themeConfig.preset);
+  }, [themeConfig.preset]);
   
   // Initialize engine
   useEffect(() => {
@@ -86,63 +92,20 @@ function App() {
   // VLM mutation request handler
   const handleVLMRequest = useCallback(
     (prompt: string, capture: SceneCapture) => {
-      // Simulate VLM response for demo
-      // In production, this would call the Anthropic API
-      
+      // This is now handled by VLMPanel directly with the dual-model pipeline
+      // Just switch to mutations panel to see the result
+      console.debug('VLM request:', prompt.slice(0, 50), 'for capture at', capture.timestamp);
       setTimeout(() => {
-        // Parse prompt for intent and generate mock response
-        let description = 'VLM suggested modification';
-        let newCode = capture.code;
-        let reasoning = '';
-        
-        if (prompt.toLowerCase().includes('fillet') || prompt.toLowerCase().includes('round')) {
-          description = 'Add rounded edges with minkowski';
-          newCode = capture.code.replace(
-            /corner_radius\s*=\s*\d+/,
-            'corner_radius = 5'
-          );
-          reasoning = 'Increased corner radius for smoother edges that are easier to print and more comfortable to handle.';
-        } else if (prompt.toLowerCase().includes('mount') || prompt.toLowerCase().includes('screw')) {
-          description = 'Add additional mounting features';
-          newCode = capture.code + `
-
-// Additional mounting tabs
-module mounting_tab() {
-    difference() {
-        cube([15, 10, 3]);
-        translate([7.5, 5, -0.1])
-            cylinder(h=4, d=m3_clearance, $fn=32);
-    }
-}
-
-// Add tabs to sides
-translate([size/2, 0, -size/2])
-    rotate([0, 0, 0])
-    mounting_tab();
-`;
-          reasoning = 'Added mounting tabs with M3 clearance holes for secure attachment to surfaces.';
-        } else if (prompt.toLowerCase().includes('compact') || prompt.toLowerCase().includes('small')) {
-          description = 'Reduce overall size';
-          newCode = capture.code.replace(/size\s*=\s*\d+/, 'size = 20');
-          reasoning = 'Reduced size parameter to create a more compact design while maintaining proportions.';
-        } else {
-          description = `Apply: ${prompt.slice(0, 50)}`;
-          reasoning = 'Generic modification based on your request.';
-        }
-        
-        addMutation({
-          description,
-          proposedCode: newCode,
-          reasoning,
-          confidence: 0.75 + Math.random() * 0.2,
-        });
-        
-        // Switch to mutations panel
         setRightPanel('mutations');
-      }, 1500);
+      }, 500);
     },
-    [addMutation]
+    []
   );
+  
+  // Theme change handler
+  const handleThemeChange = useCallback((preset: ThemePreset) => {
+    setTheme(preset);
+  }, [setTheme]);
   
   // Keyboard shortcuts
   useEffect(() => {
@@ -169,6 +132,13 @@ translate([size/2, 0, -size/2])
   
   return (
     <div className="app">
+      {/* Ambient Background Effects */}
+      <div className="ambient-bg">
+        <div className="gradient-orb orb-1"></div>
+        <div className="gradient-orb orb-2"></div>
+        <div className="gradient-orb orb-3"></div>
+      </div>
+      
       <header className="app-header">
         <div className="logo">
           <span className="logo-icon">◈</span>
@@ -185,6 +155,19 @@ translate([size/2, 0, -size/2])
         </div>
         
         <nav className="header-nav">
+          {/* Theme Selector */}
+          <div className="theme-selector">
+            <span>🎨</span>
+            <select 
+              value={themeConfig.preset} 
+              onChange={(e) => handleThemeChange(e.target.value as ThemePreset)}
+            >
+              {Object.entries(THEME_PRESETS).map(([key, theme]) => (
+                <option key={key} value={key}>{theme.name}</option>
+              ))}
+            </select>
+          </div>
+          
           <button
             className="nav-btn new-btn"
             onClick={() => {
@@ -241,7 +224,7 @@ translate([size/2, 0, -size/2])
               className={`panel-tab ${rightPanel === 'vlm' ? 'active' : ''}`}
               onClick={() => setRightPanel('vlm')}
             >
-              📷 Capture
+              👁 Vision
             </button>
           </div>
           

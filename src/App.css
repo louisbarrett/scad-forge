@@ -1,12 +1,13 @@
 /* ============================================
    SCAD Forge - Visual OpenSCAD Editor
    Aesthetic: Industrial Cyberpunk / CAD Terminal
+   Theming inspired by ThemeForge
    ============================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Exo+2:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap');
 
 :root {
-  /* Core palette */
+  /* Core palette - Cyberpunk default */
   --bg-deepest: #05050a;
   --bg-deep: #0a0a14;
   --bg-dark: #0d0d1a;
@@ -37,10 +38,18 @@
   --glow-secondary: 0 0 20px rgba(123, 45, 255, 0.3);
   --glow-success: 0 0 20px rgba(0, 255, 136, 0.3);
   
-  /* Layout */
+  /* Layout - EXPANDED panel width for better chat experience */
   --header-height: 48px;
   --footer-height: 28px;
-  --panel-width: 320px;
+  --panel-width: 420px;
+  
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  
+  /* Theme transitions */
+  --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 * {
@@ -55,11 +64,68 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Exo 2', sans-serif;
+  font-family: 'Outfit', sans-serif;
   background: var(--bg-deepest);
   color: var(--text-normal);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: var(--theme-transition);
+}
+
+/* ============================================
+   AMBIENT BACKGROUND EFFECTS (from ThemeGen)
+   ============================================ */
+
+.ambient-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.gradient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.2;
+  animation: float 20s ease-in-out infinite;
+}
+
+.orb-1 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, var(--accent-primary) 0%, transparent 70%);
+  top: -200px;
+  left: -200px;
+  animation-delay: 0s;
+}
+
+.orb-2 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, var(--accent-secondary) 0%, transparent 70%);
+  bottom: -150px;
+  right: -150px;
+  animation-delay: -7s;
+}
+
+.orb-3 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, var(--accent-success) 0%, transparent 70%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: -14s;
+  opacity: 0.1;
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -30px) scale(1.05); }
+  50% { transform: translate(-20px, 20px) scale(0.95); }
+  75% { transform: translate(20px, 30px) scale(1.02); }
 }
 
 /* ============================================
@@ -70,6 +136,8 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  position: relative;
+  z-index: 1;
   background: 
     linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-deepest) 100%),
     repeating-linear-gradient(
@@ -88,9 +156,11 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  background: var(--bg-dark);
+  background: rgba(13, 13, 26, 0.8);
+  backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  transition: var(--theme-transition);
 }
 
 .logo {
@@ -183,7 +253,39 @@ body {
   color: var(--bg-deepest);
 }
 
-/* Main area */
+/* Theme Selector */
+.theme-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg-light);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.theme-selector:hover {
+  border-color: var(--accent-primary);
+}
+
+.theme-selector select {
+  background: transparent;
+  border: none;
+  color: var(--text-normal);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+.theme-selector select option {
+  background: var(--bg-dark);
+  color: var(--text-normal);
+}
+
+/* Main area - EXPANDED grid for better chat */
 .app-main {
   flex: 1;
   display: grid;
@@ -198,6 +300,7 @@ body {
 .side-pane {
   background: var(--bg-dark);
   overflow: hidden;
+  transition: var(--theme-transition);
 }
 
 /* Footer */
@@ -212,6 +315,7 @@ body {
   font-size: 11px;
   color: var(--text-muted);
   flex-shrink: 0;
+  transition: var(--theme-transition);
 }
 
 .keybind {
@@ -414,18 +518,20 @@ body {
 }
 
 /* ============================================
-   SIDE PANELS
+   SIDE PANELS - EXPANDED FOR BETTER CHAT
    ============================================ */
 
 .side-pane {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .panel-tabs {
   display: flex;
   background: var(--bg-medium);
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .panel-tab {
@@ -454,15 +560,19 @@ body {
 .panel-content {
   flex: 1;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Panel common styles */
 .mutation-panel,
 .history-panel,
-.vlm-panel {
+.vlm-panel,
+.chat-panel {
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .panel-header {
@@ -471,6 +581,7 @@ body {
   justify-content: space-between;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .panel-title {
@@ -544,6 +655,7 @@ body {
   justify-content: center;
   padding: 40px 20px;
   text-align: center;
+  flex: 1;
 }
 
 .empty-icon {
@@ -569,6 +681,7 @@ body {
   border-top: 1px solid var(--border-subtle);
   font-size: 10px;
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 /* ============================================
@@ -671,6 +784,27 @@ body {
 
 .mutation-actions .action-btn {
   flex: 1;
+}
+
+/* Vision analysis in mutations */
+.mutation-vision-analysis {
+  padding: 8px 12px;
+  margin: 0 12px 10px;
+  background: rgba(123, 45, 255, 0.1);
+  border: 1px solid rgba(123, 45, 255, 0.3);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.mutation-vision-analysis-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: var(--accent-secondary);
 }
 
 /* ============================================
@@ -961,7 +1095,11 @@ body {
 
 /* VLM Compose */
 .vlm-compose {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   padding: 12px;
+  overflow-y: auto;
 }
 
 .compose-preview {
@@ -969,6 +1107,7 @@ body {
   margin-bottom: 12px;
   border-radius: 6px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .compose-preview img {
@@ -995,9 +1134,15 @@ body {
   color: var(--text-bright);
 }
 
+.compose-prompt {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 .compose-prompt textarea {
-  width: 100%;
-  min-height: 100px;
+  flex: 1;
+  min-height: 120px;
   padding: 10px;
   background: var(--bg-medium);
   border: 1px solid var(--border-subtle);
@@ -1005,7 +1150,7 @@ body {
   color: var(--text-normal);
   font-family: inherit;
   font-size: 12px;
-  resize: vertical;
+  resize: none;
 }
 
 .compose-prompt textarea:focus {
@@ -1021,6 +1166,7 @@ body {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+  flex-shrink: 0;
 }
 
 .compose-actions .action-btn {
@@ -1044,8 +1190,54 @@ body {
   color: var(--text-muted);
 }
 
+/* VLM Processing Status */
+.vlm-processing {
+  padding: 16px;
+  background: var(--bg-medium);
+  border-radius: 6px;
+  margin: 12px 0;
+}
+
+.vlm-processing-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.vlm-processing-step.active {
+  color: var(--accent-primary);
+}
+
+.vlm-processing-step.complete {
+  color: var(--accent-success);
+}
+
+.vlm-processing-step .step-icon {
+  font-size: 16px;
+}
+
+.vlm-processing-step .step-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.vlm-processing-output {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-deepest);
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
 .payload-preview {
   margin-top: 12px;
+  flex-shrink: 0;
 }
 
 .payload-preview summary {
@@ -1092,6 +1284,12 @@ body {
    RESPONSIVE
    ============================================ */
 
+@media (max-width: 1400px) {
+  :root {
+    --panel-width: 380px;
+  }
+}
+
 @media (max-width: 1200px) {
   .app-main {
     grid-template-columns: 1fr 1fr;
@@ -1100,7 +1298,7 @@ body {
   
   .side-pane {
     grid-column: 1 / -1;
-    max-height: 300px;
+    max-height: 400px;
   }
 }
 
@@ -1116,13 +1314,14 @@ body {
 }
 
 /* ============================================
-   CHAT PANEL
+   CHAT PANEL - EXPANDED & IMPROVED
    ============================================ */
 
 .chat-panel {
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .streaming-badge {
@@ -1142,6 +1341,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 
 /* Message Bubbles */
@@ -1193,6 +1393,15 @@ body {
 
 .message-bubble.assistant .message-role {
   color: var(--accent-secondary);
+}
+
+.message-model-badge {
+  font-size: 9px;
+  padding: 2px 6px;
+  background: rgba(123, 45, 255, 0.2);
+  color: var(--accent-secondary);
+  border-radius: 3px;
+  margin-left: 8px;
 }
 
 .message-time {
@@ -1342,12 +1551,14 @@ body {
   padding: 12px;
   background: var(--bg-medium);
   border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .input-options {
   display: flex;
   gap: 12px;
   margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 
 .option-toggle {
@@ -1403,6 +1614,8 @@ body {
   font-size: 13px;
   resize: none;
   transition: border-color 0.2s ease;
+  min-height: 44px;
+  max-height: 120px;
 }
 
 .input-container textarea:focus {
@@ -1507,6 +1720,31 @@ body {
   transition: opacity 0.2s ease;
 }
 
+/* Multi-model indicator */
+.model-indicator-multi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.model-row-label {
+  color: var(--text-muted);
+  min-width: 50px;
+}
+
+.model-row-value {
+  color: var(--accent-primary);
+  font-weight: 500;
+  font-family: 'JetBrains Mono', monospace;
+}
+
 /* Settings Modal */
 .settings-modal-overlay {
   position: fixed;
@@ -1515,6 +1753,7 @@ body {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1532,8 +1771,8 @@ body {
   border: 1px solid var(--border-medium);
   border-radius: 12px;
   width: 90%;
-  max-width: 480px;
-  max-height: 80vh;
+  max-width: 560px;
+  max-height: 85vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1857,4 +2096,41 @@ body {
   font-size: 10px;
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+/* Model configuration section in settings */
+.model-config-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.model-config-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.model-config-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-config-item label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.model-config-item label .model-type-icon {
+  font-size: 14px;
+}
+
+.model-config-item .model-type-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 22px;
+  margin-bottom: 4px;
 }

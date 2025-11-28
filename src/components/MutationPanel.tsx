@@ -111,6 +111,15 @@ function MutationCard({
         <div className="mutation-reasoning">{mutation.reasoning}</div>
       )}
       
+      {mutation.visionAnalysis && (
+        <div className="mutation-vision-analysis">
+          <div className="mutation-vision-analysis-header">
+            <span>👁 Vision Analysis</span>
+          </div>
+          {mutation.visionAnalysis.slice(0, 200)}...
+        </div>
+      )}
+      
       {mutation.confidence !== undefined && (
         <div className="mutation-confidence">
           <div

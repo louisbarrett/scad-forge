@@ -2,11 +2,40 @@
 
 import type * as THREE from 'three';
 
-// LLM Configuration
+// Theme Configuration
+export type ThemePreset = 'cyberpunk' | 'midnight' | 'aurora' | 'ember' | 'forest' | 'ocean';
+
+export interface ThemeConfig {
+  preset: ThemePreset;
+  customColors?: Partial<ThemeColors>;
+}
+
+export interface ThemeColors {
+  bgDeep: string;
+  bgPrimary: string;
+  bgSecondary: string;
+  bgTertiary: string;
+  bgElevated: string;
+  textPrimary: string;
+  textSecondary: string;
+  textMuted: string;
+  accentPrimary: string;
+  accentSecondary: string;
+  accentSuccess: string;
+  accentWarning: string;
+  accentError: string;
+}
+
+// LLM Configuration - Multi-model support
 export interface LLMConfig {
   provider: 'ollama' | 'openai' | 'custom';
   baseUrl: string;
   apiKey?: string;
+  // Planning/coding model for generating OpenSCAD code
+  planningModel: string;
+  // Vision model for analyzing images and visual context
+  visionModel: string;
+  // Legacy single model (used as fallback)
   model: string;
   temperature: number;
   maxTokens: number;
@@ -29,6 +58,8 @@ export interface ChatMessage {
   // Status for assistant messages
   status?: 'pending' | 'streaming' | 'complete' | 'error';
   error?: string;
+  // Which model was used
+  modelUsed?: 'planning' | 'vision' | 'both';
 }
 
 export interface CodePatch {
@@ -71,6 +102,8 @@ export interface LLMMutation {
   diff: string;
   confidence?: number;
   reasoning?: string;
+  // Track which models were used
+  visionAnalysis?: string;
 }
 
 export interface EngineStatus {

@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import type { RenderResult, ScadAnalysis } from '../types';
 import { parseOFFBytesToGeometry } from '../utils/off-parser';
 
