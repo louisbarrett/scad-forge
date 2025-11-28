@@ -184,6 +184,36 @@ Special Variables: $fn, $fs, $fa for curve smoothness
 
 Be precise and technical. When suggesting modifications, reference specific OpenSCAD functions and explain how to combine them using CSG operations (union, difference, intersection).`;
 
+// System prompt for error fixing - focused on debugging and correcting OpenSCAD errors
+const ERROR_FIX_SYSTEM_PROMPT = `You are an expert OpenSCAD debugger. Your task is to fix broken OpenSCAD code based on compiler error messages.
+
+CRITICAL RULES:
+1. ALWAYS output your fixed code in a \`\`\`openscad code block
+2. Output the COMPLETE fixed code, not just the changed parts
+3. Analyze the error message carefully to identify the root cause
+4. Common OpenSCAD errors and fixes:
+   - "Unknown module" → Check spelling, ensure module is defined before use
+   - "Unknown function" → Check spelling, ensure function is defined
+   - "Expected )" → Missing closing parenthesis, check function calls
+   - "Expected }" → Missing closing brace, check module/control structures
+   - "Expected ;" → Missing semicolon at end of statement
+   - "Undefined variable" → Variable not declared or typo in name
+   - "Invalid value" → Wrong type passed to function
+   - "Too few parameters" → Add missing required parameters
+   - "Too many parameters" → Remove extra parameters
+
+FIX STRATEGY:
+1. Read the error message and line number
+2. Locate the problematic code
+3. Apply the minimal fix needed to resolve the error
+4. Preserve all working code and functionality
+5. Do NOT add new features - only fix the error
+
+REQUIRED OUTPUT FORMAT:
+\`\`\`openscad
+// Your complete fixed OpenSCAD code here
+\`\`\``;
+
 interface ChatCompletionMessage {
   role: 'system' | 'user' | 'assistant';
   content: string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
@@ -673,6 +703,169 @@ Generate the complete modified OpenSCAD code that implements the requested chang
 
       const data = (await response.json()) as ChatCompletionResponse;
       return data.choices[0]?.message?.content || '';
+    } finally {
+      this.abortController = null;
+    }
+  }
+
+  /**
+   * Attempt to fix broken OpenSCAD code based on error messages
+   * @param code The broken OpenSCAD code
+   * @param errorMessage The error message from the compiler
+   * @returns The LLM's response with the fixed code
+   */
+  async attemptFix(code: string, errorMessage: string): Promise<string> {
+    this.abortController = new AbortController();
+
+    const model = this.getModelForTask('planning');
+    
+    const messages: ChatCompletionMessage[] = [
+      { role: 'system', content: ERROR_FIX_SYSTEM_PROMPT },
+      { 
+        role: 'user', 
+        content: `The following OpenSCAD code has an error. Please fix it.
+
+ERROR MESSAGE:
+${errorMessage}
+
+BROKEN CODE:
+\`\`\`openscad
+${code}
+\`\`\`
+
+Please analyze the error and provide the complete fixed code.`
+      },
+    ];
+
+    const requestBody: ChatCompletionRequest = {
+      model,
+      messages,
+      temperature: 0.3, // Lower temperature for more precise fixes
+      max_tokens: this.config.maxTokens,
+      stream: false,
+    };
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.config.apiKey) {
+      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    }
+
+    try {
+      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
+        signal: this.abortController.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`LLM API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = (await response.json()) as ChatCompletionResponse;
+      return data.choices[0]?.message?.content || '';
+    } finally {
+      this.abortController = null;
+    }
+  }
+
+  /**
+   * Stream an attempt to fix broken OpenSCAD code
+   * @param code The broken OpenSCAD code
+   * @param errorMessage The error message from the compiler
+   * @yields Chunks of the LLM response
+   */
+  async *streamAttemptFix(
+    code: string,
+    errorMessage: string
+  ): AsyncGenerator<string, void, unknown> {
+    this.abortController = new AbortController();
+
+    const model = this.getModelForTask('planning');
+    
+    const messages: ChatCompletionMessage[] = [
+      { role: 'system', content: ERROR_FIX_SYSTEM_PROMPT },
+      { 
+        role: 'user', 
+        content: `The following OpenSCAD code has an error. Please fix it.
+
+ERROR MESSAGE:
+${errorMessage}
+
+BROKEN CODE:
+\`\`\`openscad
+${code}
+\`\`\`
+
+Please analyze the error and provide the complete fixed code.`
+      },
+    ];
+
+    const requestBody: ChatCompletionRequest = {
+      model,
+      messages,
+      temperature: 0.3,
+      max_tokens: this.config.maxTokens,
+      stream: true,
+    };
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.config.apiKey) {
+      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    }
+
+    try {
+      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
+        signal: this.abortController.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`LLM API error: ${response.status} - ${errorText}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (!trimmed.startsWith('data: ')) continue;
+
+          try {
+            const json = JSON.parse(trimmed.slice(6)) as ChatCompletionChunk;
+            const content = json.choices[0]?.delta?.content;
+            if (content) {
+              yield content;
+            }
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      }
     } finally {
       this.abortController = null;
     }

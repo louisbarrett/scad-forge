@@ -7,8 +7,12 @@ import { VLMPanel } from './components/VLMPanel';
 import { ChatPanel } from './components/ChatPanel';
 import { useForgeStore, THEME_PRESETS, applyTheme, selectCanUndo, selectCanRedo } from './store/forgeStore';
 import { getEngine } from './engine/openscad';
+import { getLLMService, extractCodeFromResponse } from './services/llm';
 import type { SceneCapture, ThemePreset } from './types';
 import './App.css';
+
+// Maximum auto-fix attempts to prevent infinite loops
+const MAX_AUTO_FIX_ATTEMPTS = 3;
 
 type RightPanel = 'chat' | 'mutations' | 'history' | 'vlm';
 
@@ -89,6 +93,9 @@ function App() {
     themeConfig,
     historyIndex,
     engineStatus,
+    autoFixEnabled,
+    autoFixAttempts,
+    isAutoFixing,
     setTheme,
     setRenderResult,
     setEngineStatus,
@@ -96,6 +103,11 @@ function App() {
     pushPatch,
     undo,
     redo,
+    setCode,
+    startAutoFix,
+    endAutoFix,
+    resetAutoFixAttempts,
+    addChatMessage,
   } = useForgeStore();
   
   const canUndo = useForgeStore(selectCanUndo);
@@ -130,8 +142,75 @@ function App() {
     setEngineStatus({ compiling: false });
   }, [setEngineStatus]);
   
+  // Auto-fix handler - attempts to fix broken code using LLM
+  const handleAutoFix = useCallback(async (errorMessage: string) => {
+    const state = useForgeStore.getState();
+    
+    // Check if auto-fix is enabled and we haven't exceeded max attempts
+    if (!state.autoFixEnabled || state.autoFixAttempts >= MAX_AUTO_FIX_ATTEMPTS) {
+      console.log('Auto-fix skipped:', state.autoFixEnabled ? 'max attempts reached' : 'disabled');
+      return false;
+    }
+    
+    startAutoFix();
+    
+    // Add a system message to chat showing auto-fix is in progress
+    addChatMessage({
+      role: 'system',
+      content: `🔧 Auto-fix attempt ${state.autoFixAttempts + 1}/${MAX_AUTO_FIX_ATTEMPTS}: Analyzing error...\n\n\`${errorMessage}\``,
+    });
+    
+    try {
+      const llmService = getLLMService();
+      llmService.updateConfig(state.llmConfig);
+      
+      // Stream the fix attempt
+      let fullResponse = '';
+      for await (const chunk of llmService.streamAttemptFix(state.code, errorMessage)) {
+        fullResponse += chunk;
+      }
+      
+      // Extract the fixed code
+      const fixedCode = extractCodeFromResponse(fullResponse);
+      
+      if (fixedCode && fixedCode !== state.code) {
+        // Apply the fix
+        setCode(fixedCode);
+        pushPatch(`Auto-fix: ${errorMessage.slice(0, 50)}...`, fixedCode, 'llm');
+        
+        // Add success message to chat
+        addChatMessage({
+          role: 'assistant',
+          content: `✅ Applied auto-fix for: \`${errorMessage.slice(0, 100)}\`\n\nRecompiling...`,
+        });
+        
+        endAutoFix(true);
+        return true;
+      } else {
+        // No valid fix found
+        addChatMessage({
+          role: 'assistant',
+          content: `⚠️ Could not extract a valid fix from LLM response. Manual intervention may be needed.`,
+        });
+        endAutoFix(false, 'No valid fix extracted');
+        return false;
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Auto-fix failed:', errorMsg);
+      
+      addChatMessage({
+        role: 'assistant',
+        content: `❌ Auto-fix failed: ${errorMsg}`,
+      });
+      
+      endAutoFix(false, errorMsg);
+      return false;
+    }
+  }, [startAutoFix, endAutoFix, setCode, pushPatch, addChatMessage]);
+  
   // Compile handler
-  const handleCompile = useCallback(async () => {
+  const handleCompile = useCallback(async (skipAutoFix = false) => {
     const engine = await getEngine();
     // Always get fresh code from store to avoid stale closure issues
     const currentCode = useForgeStore.getState().code;
@@ -148,6 +227,26 @@ function App() {
       }
       
       setRenderResult(result);
+      
+      // If compilation succeeded, reset auto-fix attempts
+      if (result.success) {
+        resetAutoFixAttempts();
+      } else if (!skipAutoFix && result.error) {
+        // Compilation failed - attempt auto-fix
+        const state = useForgeStore.getState();
+        if (state.autoFixEnabled && state.autoFixAttempts < MAX_AUTO_FIX_ATTEMPTS && !state.isAutoFixing) {
+          setIsCompiling(false);
+          setEngineStatus({ compiling: false });
+          
+          // Attempt auto-fix
+          const fixed = await handleAutoFix(result.error);
+          if (fixed) {
+            // Recompile with the fixed code (skip auto-fix to prevent loop on same error)
+            setTimeout(() => handleCompile(true), 100);
+          }
+          return;
+        }
+      }
     } catch (error) {
       // Ignore cancellation errors
       const errorMsg = error instanceof Error ? error.message : 'Compilation failed';
@@ -163,7 +262,7 @@ function App() {
       setIsCompiling(false);
       setEngineStatus({ compiling: false });
     }
-  }, [setRenderResult, setEngineStatus]);
+  }, [setRenderResult, setEngineStatus, resetAutoFixAttempts, handleAutoFix]);
   
   // Capture handler
   const handleCapture = useCallback(
@@ -349,7 +448,12 @@ function App() {
         </div>
         
         <div className="header-status">
-          {engineStatus.compiling ? (
+          {isAutoFixing ? (
+            <span className="status auto-fixing">
+              <span className="compile-spinner"></span>
+              🔧 Auto-fixing... ({autoFixAttempts}/{MAX_AUTO_FIX_ATTEMPTS})
+            </span>
+          ) : engineStatus.compiling ? (
             <button 
               className="status compiling" 
               onClick={handleCancelCompile}
@@ -399,6 +503,15 @@ function App() {
               ↷ Redo
             </button>
           </div>
+          
+          {/* Auto-Fix Toggle */}
+          <button
+            className={`nav-btn auto-fix-btn ${autoFixEnabled ? 'active' : ''}`}
+            onClick={() => useForgeStore.getState().setAutoFixEnabled(!autoFixEnabled)}
+            title={`Auto-fix ${autoFixEnabled ? 'enabled' : 'disabled'} (${autoFixAttempts}/${MAX_AUTO_FIX_ATTEMPTS} attempts)`}
+          >
+            🔧 {autoFixEnabled ? 'Auto-Fix On' : 'Auto-Fix Off'}
+          </button>
           
           <button
             className="nav-btn new-btn"

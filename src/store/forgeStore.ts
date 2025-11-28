@@ -375,6 +375,12 @@ interface ForgeState {
   renderResult: RenderResult | null;
   engineStatus: EngineStatus;
   
+  // Auto-fix state
+  autoFixEnabled: boolean;
+  autoFixAttempts: number;
+  isAutoFixing: boolean;
+  lastAutoFixError: string | null;
+  
   // Viewer settings
   viewerState: ViewerState;
   
@@ -413,6 +419,12 @@ interface ForgeState {
   // Render actions
   setRenderResult: (result: RenderResult | null) => void;
   setEngineStatus: (status: Partial<EngineStatus>) => void;
+  
+  // Auto-fix actions
+  setAutoFixEnabled: (enabled: boolean) => void;
+  startAutoFix: () => void;
+  endAutoFix: (success: boolean, error?: string) => void;
+  resetAutoFixAttempts: () => void;
   
   // Viewer actions
   updateViewerState: (state: Partial<ViewerState>) => void;
@@ -460,6 +472,12 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     ready: false,
     compiling: false,
   },
+  
+  // Auto-fix state
+  autoFixEnabled: true, // Enabled by default
+  autoFixAttempts: 0,
+  isAutoFixing: false,
+  lastAutoFixError: null,
   
   viewerState: {
     wireframe: false,
@@ -605,6 +623,24 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     engineStatus: { ...state.engineStatus, ...status },
   })),
   
+  // Auto-fix actions
+  setAutoFixEnabled: (enabled) => set({ autoFixEnabled: enabled }),
+  
+  startAutoFix: () => set((state) => ({
+    isAutoFixing: true,
+    autoFixAttempts: state.autoFixAttempts + 1,
+  })),
+  
+  endAutoFix: (success, error) => set({
+    isAutoFixing: false,
+    lastAutoFixError: success ? null : (error || 'Auto-fix failed'),
+  }),
+  
+  resetAutoFixAttempts: () => set({
+    autoFixAttempts: 0,
+    lastAutoFixError: null,
+  }),
+  
   updateViewerState: (viewerState) => set((state) => ({
     viewerState: { ...state.viewerState, ...viewerState },
   })),
@@ -613,8 +649,9 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     editorSettings: { ...state.editorSettings, ...settings },
   })),
   
-  addCapture: (capture) => set((state) => ({
-    captures: [...state.captures, { ...capture, timestamp: Date.now() }],
+  addCapture: (capture) => set(() => ({
+    // Only keep the latest capture - replace any existing ones
+    captures: [{ ...capture, timestamp: Date.now() }],
   })),
   
   clearCaptures: () => set({ captures: [] }),

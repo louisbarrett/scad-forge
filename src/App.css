@@ -303,6 +303,27 @@ body {
   50% { opacity: 0.3; }
 }
 
+/* Auto-fix status indicator */
+.header-status .status.auto-fixing {
+  background: linear-gradient(135deg, rgba(255, 170, 0, 0.15), rgba(123, 45, 255, 0.15));
+  color: var(--accent-warning);
+  border: 1px solid rgba(255, 170, 0, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: autoFixPulse 1.5s ease-in-out infinite;
+}
+
+.header-status .status.auto-fixing .compile-spinner {
+  border-color: rgba(255, 170, 0, 0.3);
+  border-top-color: var(--accent-warning);
+}
+
+@keyframes autoFixPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 170, 0, 0); }
+  50% { box-shadow: 0 0 12px 2px rgba(255, 170, 0, 0.3); }
+}
+
 .header-nav {
   display: flex;
   gap: 10px;
@@ -341,6 +362,26 @@ body {
 .nav-btn.new-btn:hover {
   box-shadow: var(--glow-primary), 0 4px 12px rgba(0, 0, 0, 0.3);
   color: var(--bg-deepest);
+}
+
+/* Auto-Fix Toggle Button */
+.nav-btn.auto-fix-btn {
+  background: var(--bg-dark);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 6px 10px;
+}
+
+.nav-btn.auto-fix-btn:hover {
+  border-color: var(--accent-warning);
+  color: var(--accent-warning);
+}
+
+.nav-btn.auto-fix-btn.active {
+  background: rgba(255, 170, 0, 0.15);
+  border-color: var(--accent-warning);
+  color: var(--accent-warning);
 }
 
 /* Undo/Redo Button Group */
