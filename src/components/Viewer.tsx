@@ -158,10 +158,16 @@ interface ViewerProps {
   onCancelCompile?: () => void;
 }
 
+// How long errors stay visible before fading out (in milliseconds)
+const ERROR_DISPLAY_DURATION = 8000;
+
 export function Viewer({ onCapture, captureRef: externalCaptureRef, onCompile, onCancelCompile }: ViewerProps) {
   const internalCaptureRef = useRef<(() => void) | null>(null);
   const capturePromiseRef = useRef<{ resolve: (url: string | null) => void } | null>(null);
   const themeColors = useThemeColors();
+  const [visibleError, setVisibleError] = useState<string | null>(null);
+  const [errorFading, setErrorFading] = useState(false);
+  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const {
     renderResult,
@@ -169,6 +175,41 @@ export function Viewer({ onCapture, captureRef: externalCaptureRef, onCompile, o
     viewerState,
     updateViewerState,
   } = useForgeStore();
+  
+  // Handle error display with auto-fade
+  useEffect(() => {
+    // Clear any existing timeout
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = null;
+    }
+    
+    if (renderResult?.error) {
+      // Show new error immediately
+      setVisibleError(renderResult.error);
+      setErrorFading(false);
+      
+      // Set timeout to start fade-out
+      errorTimeoutRef.current = setTimeout(() => {
+        setErrorFading(true);
+        // After fade animation, hide completely
+        errorTimeoutRef.current = setTimeout(() => {
+          setVisibleError(null);
+          setErrorFading(false);
+        }, 500); // Match CSS transition duration
+      }, ERROR_DISPLAY_DURATION);
+    } else {
+      // No error - clear immediately
+      setVisibleError(null);
+      setErrorFading(false);
+    }
+    
+    return () => {
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+    };
+  }, [renderResult?.error]);
   
   const geometry = renderResult?.geometry ?? null;
   
@@ -365,10 +406,10 @@ export function Viewer({ onCapture, captureRef: externalCaptureRef, onCompile, o
           </div>
         )}
         
-        {renderResult?.error && (
-          <div className="viewer-error">
+        {visibleError && (
+          <div className={`viewer-error ${errorFading ? 'fading' : ''}`}>
             <span className="error-icon">✕</span>
-            {renderResult.error}
+            {visibleError}
           </div>
         )}
         

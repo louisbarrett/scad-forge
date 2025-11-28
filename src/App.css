@@ -933,6 +933,12 @@ body {
   font-size: 13px;
   backdrop-filter: blur(8px);
   z-index: 10;
+  opacity: 1;
+  transition: opacity 0.5s ease-out;
+}
+
+.viewer-error.fading {
+  opacity: 0;
 }
 
 .error-icon {

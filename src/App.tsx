@@ -302,6 +302,11 @@ function App() {
       if (result.success) {
         resetAutoFixAttempts();
       } else if (!skipAutoFix && result.error) {
+        // Skip auto-fix for expected conditions during app boot
+        if (result.error === 'Engine not initialized') {
+          return;
+        }
+        
         // Compilation failed - attempt auto-fix
         const state = useForgeStore.getState();
         if (state.autoFixEnabled && state.autoFixAttempts < MAX_AUTO_FIX_ATTEMPTS && !state.isAutoFixing) {
