@@ -3,18 +3,76 @@ import { CodeEditor } from './components/CodeEditor';
 import { Viewer } from './components/Viewer';
 import { MutationPanel } from './components/MutationPanel';
 import { HistoryPanel } from './components/HistoryPanel';
-import { VLMPanel } from './components/VLMPanel';
 import { ChatPanel } from './components/ChatPanel';
 import { useForgeStore, THEME_PRESETS, applyTheme, selectCanUndo, selectCanRedo } from './store/forgeStore';
-import { getEngine } from './engine/openscad';
+import { getEngine, WASMOpenSCADEngine } from './engine/openscad';
 import { getLLMService, extractCodeFromResponse } from './services/llm';
-import type { SceneCapture, ThemePreset } from './types';
+import type { ThemePreset } from './types';
 import './App.css';
 
 // Maximum auto-fix attempts to prevent infinite loops
 const MAX_AUTO_FIX_ATTEMPTS = 3;
 
-type RightPanel = 'chat' | 'mutations' | 'history' | 'vlm';
+type RightPanel = 'chat' | 'mutations' | 'history';
+
+// System Console Component
+function SystemConsole() {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const { systemMessages, clearSystemMessages } = useForgeStore();
+  
+  const errorCount = systemMessages.filter(m => m.type === 'error').length;
+  const warningCount = systemMessages.filter(m => m.type === 'warning').length;
+  
+  if (systemMessages.length === 0) {
+    return (
+      <div className="system-console-indicator clean">
+        <span className="console-icon">✓</span>
+        <span>No issues</span>
+      </div>
+    );
+  }
+  
+  return (
+    <div className={`system-console ${isExpanded ? 'expanded' : ''}`}>
+      <button 
+        className="system-console-toggle"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <span className="console-counts">
+          {errorCount > 0 && <span className="error-count">❌ {errorCount}</span>}
+          {warningCount > 0 && <span className="warning-count">⚠️ {warningCount}</span>}
+          {errorCount === 0 && warningCount === 0 && <span className="info-count">ℹ️ {systemMessages.length}</span>}
+        </span>
+        <span className="console-label">Console</span>
+        <span className="console-expand">{isExpanded ? '▼' : '▲'}</span>
+      </button>
+      
+      {isExpanded && (
+        <div className="system-console-content">
+          <div className="console-header">
+            <span>System Messages ({systemMessages.length})</span>
+            <button onClick={clearSystemMessages} className="clear-console-btn" title="Clear console">
+              🗑️ Clear
+            </button>
+          </div>
+          <div className="console-messages">
+            {systemMessages.slice(-20).reverse().map((msg) => (
+              <div key={msg.id} className={`console-message ${msg.type}`}>
+                <span className="message-icon">
+                  {msg.type === 'error' ? '❌' : msg.type === 'warning' ? '⚠️' : 'ℹ️'}
+                </span>
+                <span className="message-time">
+                  {new Date(msg.timestamp).toLocaleTimeString()}
+                </span>
+                <span className="message-content">{msg.content}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Storage key for panel sizes
 const PANEL_SIZES_KEY = 'scad-forge-panel-sizes';
@@ -88,6 +146,9 @@ function App() {
   const [editorCollapsed, setEditorCollapsed] = useState<boolean>(loadEditorCollapsed);
   const mainRef = useRef<HTMLDivElement>(null);
   
+  // Capture trigger ref - allows ChatPanel to trigger captures
+  const triggerCaptureRef = useRef<(() => Promise<string | null>) | null>(null);
+  
   const {
     code,
     themeConfig,
@@ -108,6 +169,7 @@ function App() {
     endAutoFix,
     resetAutoFixAttempts,
     addChatMessage,
+    addSystemMessage,
   } = useForgeStore();
   
   const canUndo = useForgeStore(selectCanUndo);
@@ -123,6 +185,14 @@ function App() {
     const init = async () => {
       setEngineStatus({ ready: false, compiling: false });
       const engine = await getEngine();
+      
+      // Wire up system message callback
+      if (engine instanceof WASMOpenSCADEngine) {
+        engine.setSystemMessageCallback((type, content) => {
+          addSystemMessage(type, content, 'openscad');
+        });
+      }
+      
       setEngineReady(engine.isReady());
       setEngineStatus({ ready: true });
       
@@ -264,7 +334,7 @@ function App() {
     }
   }, [setRenderResult, setEngineStatus, resetAutoFixAttempts, handleAutoFix]);
   
-  // Capture handler
+  // Capture handler - just saves to store, no panel switching
   const handleCapture = useCallback(
     (
       imageDataUrl: string,
@@ -277,24 +347,8 @@ function App() {
         cameraPosition,
         cameraTarget,
       });
-      
-      // Switch to VLM panel
-      setRightPanel('vlm');
     },
     [code, addCapture]
-  );
-  
-  // VLM mutation request handler
-  const handleVLMRequest = useCallback(
-    (prompt: string, capture: SceneCapture) => {
-      // This is now handled by VLMPanel directly with the dual-model pipeline
-      // Just switch to mutations panel to see the result
-      console.debug('VLM request:', prompt.slice(0, 50), 'for capture at', capture.timestamp);
-      setTimeout(() => {
-        setRightPanel('mutations');
-      }, 500);
-    },
-    []
   );
   
   // Theme change handler
@@ -444,7 +498,7 @@ function App() {
         <div className="logo">
           <span className="logo-icon">◈</span>
           <span className="logo-text">SCAD Forge</span>
-          <span className="logo-tag">VLM-Powered OpenSCAD IDE</span>
+          <span className="logo-tag">AI-Powered OpenSCAD IDE</span>
         </div>
         
         <div className="header-status">
@@ -591,7 +645,7 @@ function App() {
             minWidth: 0, // Allow flex item to shrink below content size
           }}
         >
-          <Viewer onCapture={handleCapture} />
+          <Viewer onCapture={handleCapture} captureRef={triggerCaptureRef} />
         </div>
         
         {/* Right resize handle */}
@@ -626,12 +680,6 @@ function App() {
             >
               ⟲ History
             </button>
-            <button
-              className={`panel-tab ${rightPanel === 'vlm' ? 'active' : ''}`}
-              onClick={() => setRightPanel('vlm')}
-            >
-              👁 Vision
-            </button>
           </div>
           
           <div className="panel-content">
@@ -640,11 +688,11 @@ function App() {
                 onCompile={handleCompile} 
                 onCancelCompile={handleCancelCompile}
                 isCompiling={engineStatus.compiling}
+                triggerCapture={() => triggerCaptureRef.current?.() ?? Promise.resolve(null)}
               />
             )}
             {rightPanel === 'mutations' && <MutationPanel />}
             {rightPanel === 'history' && <HistoryPanel />}
-            {rightPanel === 'vlm' && <VLMPanel onRequestMutation={handleVLMRequest} />}
           </div>
         </div>
       </main>
@@ -655,6 +703,9 @@ function App() {
           <span className="keybind">Ctrl+Z</span> Undo
           <span className="keybind">Ctrl+Y</span> Redo
           <span className="keybind">Esc</span> Cancel
+        </div>
+        <div className="footer-center">
+          <SystemConsole />
         </div>
         <div className="footer-right">
           AZAI Fabrication Profile • 220³mm Print • 400²mm Laser

@@ -13,6 +13,8 @@ import type {
   LLMConfig,
   ThemePreset,
   ThemeConfig,
+  SystemMessage,
+  SystemMessageType,
 } from '../types';
 import { DEFAULT_LLM_CONFIG } from '../services/llm';
 
@@ -400,6 +402,9 @@ interface ForgeState {
   // Theme state
   themeConfig: ThemeConfig;
   
+  // System console state (errors/warnings)
+  systemMessages: SystemMessage[];
+  
   // Actions
   setCode: (code: string) => void;
   saveCode: () => void;
@@ -449,6 +454,11 @@ interface ForgeState {
   
   // Theme actions
   setTheme: (preset: ThemePreset) => void;
+  
+  // System console actions
+  addSystemMessage: (type: SystemMessageType, content: string, source?: string) => void;
+  clearSystemMessages: () => void;
+  getRecentSystemMessages: (count?: number) => SystemMessage[];
   
   // Reset
   reset: () => void;
@@ -507,6 +517,9 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   
   // Theme state
   themeConfig: loadThemeConfig(),
+  
+  // System console state
+  systemMessages: [],
   
   // Actions
   setCode: (code) => {
@@ -758,6 +771,27 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     set({ themeConfig: newConfig });
   },
   
+  // System console actions
+  addSystemMessage: (type, content, source = 'system') => {
+    const message: SystemMessage = {
+      id: uuidv4(),
+      type,
+      content,
+      timestamp: Date.now(),
+      source,
+    };
+    set((state) => ({
+      systemMessages: [...state.systemMessages.slice(-99), message], // Keep last 100
+    }));
+  },
+  
+  clearSystemMessages: () => set({ systemMessages: [] }),
+  
+  getRecentSystemMessages: (count = 10) => {
+    const state = get();
+    return state.systemMessages.slice(-count);
+  },
+  
   reset: () => {
     persistCode(DEFAULT_CODE);
     saveChatMessages([]);
@@ -775,6 +809,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
       chatHistory: [],
       chatHistoryIndex: -1,
       isChatStreaming: false,
+      systemMessages: [],
     });
   },
   

@@ -130,6 +130,17 @@ export interface EditorSettings {
   compileDelay: number;
 }
 
+// System Console Message (errors/warnings from OpenSCAD)
+export type SystemMessageType = 'error' | 'warning' | 'info';
+
+export interface SystemMessage {
+  id: string;
+  type: SystemMessageType;
+  content: string;
+  timestamp: number;
+  source?: string; // e.g., 'openscad', 'llm', 'system'
+}
+
 // OpenSCAD specific types
 export interface ScadVariable {
   name: string;

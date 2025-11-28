@@ -454,14 +454,17 @@ interface ChatPanelProps {
   onCompile?: () => void;
   onCancelCompile?: () => void;
   isCompiling?: boolean;
+  triggerCapture?: () => Promise<string | null>;
 }
 
-export function ChatPanel({ onCompile, onCancelCompile, isCompiling }: ChatPanelProps) {
+export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapture }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [includeCode, setIncludeCode] = useState(true);
   const [includeImage, setIncludeImage] = useState(false);
+  const [includeSystem, setIncludeSystem] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [autoAppliedMessages, setAutoAppliedMessages] = useState<Set<string>>(new Set());
+  const [isCapturing, setIsCapturing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
@@ -471,6 +474,7 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling }: ChatPanel
     chatMessages,
     llmConfig,
     isChatStreaming,
+    systemMessages,
     addChatMessage,
     updateChatMessage,
     appendToChatMessage,
@@ -478,6 +482,7 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling }: ChatPanel
     setChatStreaming,
     updateLLMConfig,
     addMutation,
+    addCapture,
   } = useForgeStore();
   
   // Quick toggle handlers for auto-apply and auto-render
@@ -510,16 +515,62 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling }: ChatPanel
   // Get the latest capture for image attachment
   const latestCapture = captures.length > 0 ? captures[captures.length - 1] : null;
   
-  const handleSend = useCallback(async () => {
-    if (!input.trim() || isChatStreaming) return;
+  // Format system messages for inclusion in chat
+  const formatSystemMessagesForChat = useCallback(() => {
+    const recentMessages = systemMessages.slice(-5); // Last 5 messages
+    if (recentMessages.length === 0) return '';
     
-    const hasImage = includeImage && latestCapture;
+    const formatted = recentMessages.map(m => {
+      const icon = m.type === 'error' ? '❌' : m.type === 'warning' ? '⚠️' : 'ℹ️';
+      return `${icon} [${m.type.toUpperCase()}] ${m.content}`;
+    }).join('\n');
+    
+    return `\n\n---\n**Recent System Messages:**\n${formatted}`;
+  }, [systemMessages]);
+  
+  const handleSend = useCallback(async () => {
+    if (!input.trim() || isChatStreaming || isCapturing) return;
+    
+    let imageDataUrl: string | undefined;
+    
+    // Auto-capture if includeImage is enabled
+    if (includeImage && triggerCapture) {
+      setIsCapturing(true);
+      try {
+        const capturedUrl = await triggerCapture();
+        if (capturedUrl) {
+          imageDataUrl = capturedUrl;
+          // Also save to captures store
+          addCapture({
+            imageDataUrl: capturedUrl,
+            code,
+            cameraPosition: [0, 0, 0],
+            cameraTarget: [0, 0, 0],
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to capture image:', e);
+      } finally {
+        setIsCapturing(false);
+      }
+    } else if (includeImage && latestCapture) {
+      // Fall back to existing capture if no trigger function
+      imageDataUrl = latestCapture.imageDataUrl;
+    }
+    
+    const hasImage = !!imageDataUrl;
+    
+    // Build message content with optional system messages
+    let messageContent = input.trim();
+    if (includeSystem && systemMessages.length > 0) {
+      messageContent += formatSystemMessagesForChat();
+    }
     
     const userMessage = {
       role: 'user' as const,
-      content: input.trim(),
+      content: messageContent,
       attachedCode: includeCode ? code : undefined,
-      attachedImage: hasImage ? latestCapture.imageDataUrl : undefined,
+      attachedImage: imageDataUrl,
     };
     
     addChatMessage(userMessage);
@@ -549,7 +600,7 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling }: ChatPanel
       for await (const chunk of llmService.streamChat(
         messagesForApi,
         code,
-        hasImage ? latestCapture.imageDataUrl : undefined
+        imageDataUrl
       )) {
         appendToChatMessage(assistantMsgId, chunk);
       }
@@ -588,7 +639,7 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling }: ChatPanel
     } finally {
       setChatStreaming(false);
     }
-  }, [input, includeCode, includeImage, code, latestCapture, llmConfig, isChatStreaming, addChatMessage, updateChatMessage, appendToChatMessage, setChatStreaming, onCompile]);
+  }, [input, includeCode, includeImage, includeSystem, code, latestCapture, llmConfig, isChatStreaming, isCapturing, systemMessages, triggerCapture, addChatMessage, updateChatMessage, appendToChatMessage, setChatStreaming, onCompile, addCapture, formatSystemMessagesForChat]);
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -705,17 +756,26 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling }: ChatPanel
               checked={includeCode}
               onChange={(e) => setIncludeCode(e.target.checked)}
             />
-            <span className="option-icon">📝</span> Include Code
+            <span className="option-icon">📝</span> Code
           </label>
-          <label className={`option-toggle ${includeImage ? 'active' : ''} ${!latestCapture ? 'disabled' : ''}`}>
+          <label className={`option-toggle ${includeImage ? 'active' : ''}`} title="Auto-captures the 3D view when sending">
             <input
               type="checkbox"
               checked={includeImage}
               onChange={(e) => setIncludeImage(e.target.checked)}
-              disabled={!latestCapture}
             />
-            <span className="option-icon">📷</span> Include Image
-            {!latestCapture && <span className="option-hint">(capture first)</span>}
+            <span className="option-icon">📷</span> Image
+            {isCapturing && <span className="option-hint">(capturing...)</span>}
+          </label>
+          <label className={`option-toggle ${includeSystem ? 'active' : ''} ${systemMessages.length === 0 ? 'disabled' : ''}`} title="Include recent errors and warnings in context">
+            <input
+              type="checkbox"
+              checked={includeSystem}
+              onChange={(e) => setIncludeSystem(e.target.checked)}
+              disabled={systemMessages.length === 0}
+            />
+            <span className="option-icon">⚠️</span> Errors
+            {systemMessages.length > 0 && <span className="option-badge">{systemMessages.length}</span>}
           </label>
           
           <div className="option-divider" />

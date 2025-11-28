@@ -58,6 +58,7 @@ OPENSCAD TECHNIQUES:
 
 5. TEXT AND EMBOSSING - For labels, engravings, and decorations:
    - text(str, size, font, halign, valign, spacing, direction) - 2D text
+   - EMBOSS HEIGHT RATIO: Use 0.2 × text_size for emboss/engrave depth (e.g., size=10 → height=2)
    - AVAILABLE FONTS (you MUST use these exact names):
      * "Liberation Sans" - sans-serif (default)
      * "Liberation Sans:style=Bold" - bold sans-serif
@@ -67,17 +68,33 @@ OPENSCAD TECHNIQUES:
      * "Liberation Mono:style=Bold" - bold monospace
      * "Liberation Serif" - serif font
      * "Liberation Serif:style=Bold" - bold serif
-   - EMBOSS example (raised text):
+   - EMBOSS example (raised text, height = 0.2 × size):
      linear_extrude(height=2) text("LABEL", size=10, font="Liberation Sans:style=Bold", halign="center");
-   - ENGRAVE example (cut into surface):
+   - ENGRAVE example (cut into surface, depth = 0.2 × size):
      difference() {
        cube([50, 20, 5]);
-       translate([25, 10, 4]) linear_extrude(height=2)
+       translate([25, 10, 4]) linear_extrude(height=1.6)
          text("TEXT", size=8, font="Liberation Sans", halign="center", valign="center");
      }
    - NEVER use generic fonts like "Sans", "Arial", "Helvetica" - they don't exist in this environment
 
-6. MODULES AND FUNCTIONS:
+6. NATURAL MATHEMATICS AND DESIGN PATTERNS:
+   - FIBONACCI SEQUENCE: 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144...
+     * Use for aesthetically pleasing proportions and spiral patterns
+     * Golden ratio φ = 1.618033988749895 (ratio of consecutive Fibonacci numbers)
+     * Fibonacci spiral: for(i=[0:n]) rotate(i*137.5) translate([sqrt(i)*scale,0,0]) shape();
+   - GOLDEN RATIO applications:
+     * Rectangle proportions: width/height = φ or height/width = φ
+     * Spiral growth: each segment φ times larger than previous
+     * Natural-looking distributions and scaling
+   - PHYLLOTAXIS (leaf/seed arrangements):
+     * Golden angle = 137.5077° for optimal packing
+     * Sunflower pattern: rotate(i*137.5) translate([sqrt(i)*r,0,0])
+   - LOGARITHMIC SPIRALS: r = a * e^(b*θ) - shells, horns, galaxies
+   - VORONOI-LIKE PATTERNS: Use hull() with strategic point placement
+   - Apply these for organic, nature-inspired, and aesthetically balanced designs
+
+7. MODULES AND FUNCTIONS:
    - module name(params) { } - reusable geometry blocks
    - function name(params) = expr; - computational functions
    - children() - reference child objects in modules
@@ -85,7 +102,7 @@ OPENSCAD TECHNIQUES:
    - let (var = expr) - local variable binding
    - Use parameters for all dimensions to enable easy modification
 
-7. SPECIAL VARIABLES - Rendering quality:
+8. SPECIAL VARIABLES - Rendering quality:
    - $fn - number of fragments (higher = smoother curves)
    - $fs - minimum fragment size
    - $fa - minimum fragment angle
@@ -97,6 +114,7 @@ BEST PRACTICES:
 - Comment sections clearly
 - Use center=true for symmetric operations
 - Apply difference() for holes, slots, and cutouts
+- Apply Fibonacci proportions and golden ratio for aesthetic designs
 
 FABRICATION CONSTRAINTS:
 - 3D Print volume: 220×220×220mm
@@ -149,6 +167,7 @@ OPENSCAD TECHNIQUES:
 
 5. TEXT AND EMBOSSING - For labels, engravings, and decorations:
    - text(str, size, font, halign, valign, spacing, direction) - 2D text
+   - EMBOSS HEIGHT RATIO: Use 0.2 × text_size for emboss/engrave depth (e.g., size=10 → height=2)
    - AVAILABLE FONTS (you MUST use these exact names):
      * "Liberation Sans" - sans-serif (default)
      * "Liberation Sans:style=Bold" - bold sans-serif
@@ -158,24 +177,40 @@ OPENSCAD TECHNIQUES:
      * "Liberation Mono:style=Bold" - bold monospace
      * "Liberation Serif" - serif font
      * "Liberation Serif:style=Bold" - bold serif
-   - EMBOSS example (raised text):
+   - EMBOSS example (raised text, height = 0.2 × size):
      linear_extrude(height=2) text("LABEL", size=10, font="Liberation Sans:style=Bold", halign="center");
-   - ENGRAVE example (cut into surface):
+   - ENGRAVE example (cut into surface, depth = 0.2 × size):
      difference() {
        cube([50, 20, 5]);
-       translate([25, 10, 4]) linear_extrude(height=2)
+       translate([25, 10, 4]) linear_extrude(height=1.6)
          text("TEXT", size=8, font="Liberation Sans", halign="center", valign="center");
      }
    - NEVER use generic fonts like "Sans", "Arial", "Helvetica" - they don't exist in this environment
 
-6. MODULES AND FUNCTIONS:
+6. NATURAL MATHEMATICS AND DESIGN PATTERNS:
+   - FIBONACCI SEQUENCE: 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144...
+     * Use for aesthetically pleasing proportions and spiral patterns
+     * Golden ratio φ = 1.618033988749895 (ratio of consecutive Fibonacci numbers)
+     * Fibonacci spiral: for(i=[0:n]) rotate(i*137.5) translate([sqrt(i)*scale,0,0]) shape();
+   - GOLDEN RATIO applications:
+     * Rectangle proportions: width/height = φ or height/width = φ
+     * Spiral growth: each segment φ times larger than previous
+     * Natural-looking distributions and scaling
+   - PHYLLOTAXIS (leaf/seed arrangements):
+     * Golden angle = 137.5077° for optimal packing
+     * Sunflower pattern: rotate(i*137.5) translate([sqrt(i)*r,0,0])
+   - LOGARITHMIC SPIRALS: r = a * e^(b*θ) - shells, horns, galaxies
+   - VORONOI-LIKE PATTERNS: Use hull() with strategic point placement
+   - Apply these for organic, nature-inspired, and aesthetically balanced designs
+
+7. MODULES AND FUNCTIONS:
    - module name(params) { } - reusable geometry blocks
    - function name(params) = expr; - computational functions
    - children() - reference child objects in modules
    - for (i = [start:step:end]) - iteration loops
    - Use parameters for all dimensions to enable easy modification
 
-7. SPECIAL VARIABLES - Rendering quality:
+8. SPECIAL VARIABLES - Rendering quality:
    - $fn - number of fragments (higher = smoother curves)
    - $fs - minimum fragment size
    - $fa - minimum fragment angle
@@ -187,6 +222,7 @@ BEST PRACTICES:
 - Comment sections clearly
 - Use center=true for symmetric operations
 - Apply difference() for holes, slots, and cutouts
+- Apply Fibonacci proportions and golden ratio for aesthetic designs
 
 FABRICATION CONSTRAINTS:
 - 3D Print volume: 220×220×220mm
@@ -625,16 +661,146 @@ Generate the complete modified OpenSCAD code that implements the requested chang
   ): AsyncGenerator<string, void, unknown> {
     this.abortController = new AbortController();
 
-    // If there's an image, use the vision model, otherwise use planning model
-    // But ALWAYS use a code-generation prompt so we get ```openscad blocks
+    // Check if there's an image in this request or history
     const hasImage = imageDataUrl || chatHistory.some(m => m.attachedImage);
-    const model = hasImage ? this.getModelForTask('vision') : this.getModelForTask('planning');
-    const systemPrompt = hasImage ? VISION_CHAT_PROMPT : PLANNING_SYSTEM_PROMPT;
     
-    const messages = this.buildMessages(chatHistory, currentCode, imageDataUrl, systemPrompt);
+    // If we have an image, use the two-step vision → planning pipeline
+    if (hasImage) {
+      // Get the latest user message for context
+      const latestUserMsg = [...chatHistory].reverse().find(m => m.role === 'user');
+      const userPrompt = latestUserMsg?.content || 'Analyze this model and suggest improvements';
+      const imageToAnalyze = imageDataUrl || latestUserMsg?.attachedImage;
+      
+      if (imageToAnalyze) {
+        // Step 1: Vision analysis
+        yield '👁️ **Analyzing image with vision model...**\n\n';
+        
+        let visionAnalysis: string;
+        try {
+          visionAnalysis = await this.analyzeImage(imageToAnalyze, userPrompt, currentCode);
+          yield `**Visual Analysis:**\n${visionAnalysis}\n\n`;
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Vision analysis failed';
+          yield `⚠️ Vision analysis error: ${errorMsg}\n\nFalling back to planning model only.\n\n`;
+          visionAnalysis = 'Vision analysis unavailable.';
+        }
+        
+        // Step 2: Planning with vision context
+        yield '⚙️ **Generating code with planning model...**\n\n';
+        
+        // Create new abort controller for planning step (vision step cleared the previous one)
+        this.abortController = new AbortController();
+        
+        // Build messages with vision analysis context for planning model
+        const planningMessages: ChatCompletionMessage[] = [
+          { role: 'system', content: PLANNING_SYSTEM_PROMPT },
+        ];
+        
+        // Include chat history context (without images)
+        for (const msg of chatHistory.slice(-6)) { // Last 6 messages for context
+          if (msg.role === 'system') continue;
+          
+          let content = msg.content;
+          if (msg.attachedCode) {
+            content += `\n\nAttached code:\n\`\`\`openscad\n${msg.attachedCode}\n\`\`\``;
+          }
+          
+          planningMessages.push({
+            role: msg.role === 'user' ? 'user' : 'assistant',
+            content,
+          });
+        }
+        
+        // Add the vision analysis and request
+        planningMessages.push({
+          role: 'user',
+          content: `Current OpenSCAD code:
+\`\`\`openscad
+${currentCode}
+\`\`\`
+
+**Visual analysis of the current 3D model:**
+${visionAnalysis}
+
+**User request:** ${userPrompt}
+
+Based on the visual analysis and user request, generate the complete modified OpenSCAD code.`,
+        });
+
+        const requestBody: ChatCompletionRequest = {
+          model: this.getModelForTask('planning'),
+          messages: planningMessages,
+          temperature: this.config.temperature,
+          max_tokens: this.config.maxTokens,
+          stream: true,
+        };
+
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+
+        if (this.config.apiKey) {
+          headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+        }
+
+        try {
+          const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody),
+            signal: this.abortController.signal,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Planning API error: ${response.status} - ${errorText}`);
+          }
+
+          const reader = response.body?.getReader();
+          if (!reader) {
+            throw new Error('No response body');
+          }
+
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === 'data: [DONE]') continue;
+              if (!trimmed.startsWith('data: ')) continue;
+
+              try {
+                const json = JSON.parse(trimmed.slice(6)) as ChatCompletionChunk;
+                const content = json.choices[0]?.delta?.content;
+                if (content) {
+                  yield content;
+                }
+              } catch {
+                // Skip malformed JSON
+              }
+            }
+          }
+        } finally {
+          this.abortController = null;
+        }
+        
+        return; // Exit after vision+planning pipeline
+      }
+    }
+    
+    // No image - use planning model directly
+    const messages = this.buildMessages(chatHistory, currentCode, undefined, PLANNING_SYSTEM_PROMPT);
 
     const requestBody: ChatCompletionRequest = {
-      model,
+      model: this.getModelForTask('planning'),
       messages,
       temperature: this.config.temperature,
       max_tokens: this.config.maxTokens,

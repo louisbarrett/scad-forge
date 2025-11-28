@@ -153,10 +153,12 @@ function ThemedGrid({ position, cellColor, sectionColor }: ThemedGridProps) {
 
 interface ViewerProps {
   onCapture?: (dataUrl: string, cameraPos: [number, number, number], cameraTarget: [number, number, number]) => void;
+  captureRef?: React.MutableRefObject<(() => Promise<string | null>) | null>;
 }
 
-export function Viewer({ onCapture }: ViewerProps) {
-  const captureRef = useRef<(() => void) | null>(null);
+export function Viewer({ onCapture, captureRef: externalCaptureRef }: ViewerProps) {
+  const internalCaptureRef = useRef<(() => void) | null>(null);
+  const capturePromiseRef = useRef<{ resolve: (url: string | null) => void } | null>(null);
   const themeColors = useThemeColors();
   
   const {
@@ -187,7 +189,7 @@ export function Viewer({ onCapture }: ViewerProps) {
   }, [geometry]);
   
   const handleCapture = useCallback(() => {
-    captureRef.current?.();
+    internalCaptureRef.current?.();
   }, []);
   
   const handleCaptureData = useCallback((
@@ -196,7 +198,31 @@ export function Viewer({ onCapture }: ViewerProps) {
     cameraTarget: [number, number, number]
   ) => {
     onCapture?.(dataUrl, cameraPos, cameraTarget);
+    // Resolve any pending capture promise
+    if (capturePromiseRef.current) {
+      capturePromiseRef.current.resolve(dataUrl);
+      capturePromiseRef.current = null;
+    }
   }, [onCapture]);
+  
+  // Expose async capture function via external ref
+  useEffect(() => {
+    if (externalCaptureRef) {
+      externalCaptureRef.current = () => {
+        return new Promise<string | null>((resolve) => {
+          capturePromiseRef.current = { resolve };
+          internalCaptureRef.current?.();
+          // Timeout fallback in case capture fails
+          setTimeout(() => {
+            if (capturePromiseRef.current) {
+              capturePromiseRef.current.resolve(null);
+              capturePromiseRef.current = null;
+            }
+          }, 1000);
+        });
+      };
+    }
+  }, [externalCaptureRef]);
   
   return (
     <div className="viewer-container">
@@ -259,7 +285,7 @@ export function Viewer({ onCapture }: ViewerProps) {
           shadows
           gl={{ preserveDrawingBuffer: true }}
         >
-          <SceneCapture onCapture={handleCaptureData} captureRef={captureRef} />
+          <SceneCapture onCapture={handleCaptureData} captureRef={internalCaptureRef} />
           
           {/* Lighting */}
           <ambientLight intensity={0.4} />

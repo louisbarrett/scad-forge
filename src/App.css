@@ -2866,3 +2866,194 @@ body {
     font-size: 11px;
   }
 }
+
+/* ============================================
+   SYSTEM CONSOLE
+   ============================================ */
+
+.footer-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.system-console {
+  position: relative;
+}
+
+.system-console-indicator.clean {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-success);
+  font-size: 11px;
+  padding: 4px 10px;
+  background: rgba(0, 255, 136, 0.1);
+  border-radius: 4px;
+}
+
+.system-console-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: var(--bg-light);
+  border: 1px solid var(--border-medium);
+  border-radius: 4px;
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 11px;
+  transition: var(--transition-fast);
+}
+
+.system-console-toggle:hover {
+  background: var(--bg-lighter);
+  border-color: var(--border-bright);
+}
+
+.console-counts {
+  display: flex;
+  gap: 8px;
+}
+
+.error-count {
+  color: var(--accent-danger);
+}
+
+.warning-count {
+  color: var(--accent-warning);
+}
+
+.info-count {
+  color: var(--text-dim);
+}
+
+.console-label {
+  color: var(--text-dim);
+}
+
+.console-expand {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.system-console-content {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 500px;
+  max-width: 90vw;
+  max-height: 300px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-medium);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.console-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-medium);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.clear-console-btn {
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.clear-console-btn:hover {
+  background: var(--bg-light);
+  border-color: var(--border-medium);
+  color: var(--text-normal);
+}
+
+.console-messages {
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.console-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--bg-light);
+}
+
+.console-message.error {
+  background: rgba(255, 68, 102, 0.1);
+  border-left: 2px solid var(--accent-danger);
+}
+
+.console-message.warning {
+  background: rgba(255, 170, 0, 0.1);
+  border-left: 2px solid var(--accent-warning);
+}
+
+.console-message.info {
+  background: rgba(0, 217, 255, 0.05);
+  border-left: 2px solid var(--border-medium);
+}
+
+.console-message .message-icon {
+  flex-shrink: 0;
+}
+
+.console-message .message-time {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.console-message .message-content {
+  flex: 1;
+  color: var(--text-normal);
+  word-break: break-word;
+}
+
+/* Option badge for errors count */
+.option-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 4px;
+  background: var(--accent-warning);
+  color: var(--bg-dark);
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+}

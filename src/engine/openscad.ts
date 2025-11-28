@@ -108,6 +108,28 @@ export class WASMOpenSCADEngine implements IOpenSCADEngine {
   private currentStdout: string[] = [];
   private currentStderr: string[] = [];
   private compilationId = 0;
+  private systemMessageCallback: ((type: 'error' | 'warning' | 'info', content: string) => void) | null = null;
+  
+  // Set callback for system messages
+  setSystemMessageCallback(callback: (type: 'error' | 'warning' | 'info', content: string) => void) {
+    this.systemMessageCallback = callback;
+  }
+  
+  // Parse and send stderr messages to system console
+  private notifySystemMessage(text: string) {
+    if (!this.systemMessageCallback || !text.trim()) return;
+    
+    const trimmed = text.trim();
+    let type: 'error' | 'warning' | 'info' = 'info';
+    
+    if (trimmed.startsWith('ERROR:') || trimmed.includes('error')) {
+      type = 'error';
+    } else if (trimmed.startsWith('WARNING:') || trimmed.includes('warning') || trimmed.startsWith('⚠')) {
+      type = 'warning';
+    }
+    
+    this.systemMessageCallback(type, trimmed);
+  }
   
   async initialize(): Promise<void> {
     if (this.initPromise) return this.initPromise;
@@ -136,6 +158,8 @@ export class WASMOpenSCADEngine implements IOpenSCADEngine {
           if (type === 'stderr') {
             this.currentStderr.push(text);
             console.warn('[OpenSCAD]', text);
+            // Send to system console
+            this.notifySystemMessage(text);
             return;
           }
           
