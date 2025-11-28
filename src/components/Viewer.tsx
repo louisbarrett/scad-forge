@@ -47,11 +47,12 @@ function useThemeColors() {
 interface ModelProps {
   geometry: THREE.BufferGeometry | null;
   wireframe: boolean;
+  flatShading: boolean;
   modelColor: string;
   modelEmissive: string;
 }
 
-function Model({ geometry, wireframe, modelColor, modelEmissive }: ModelProps) {
+function Model({ geometry, wireframe, flatShading, modelColor, modelEmissive }: ModelProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const { viewerState } = useForgeStore();
   
@@ -62,6 +63,22 @@ function Model({ geometry, wireframe, modelColor, modelEmissive }: ModelProps) {
   });
   
   if (!geometry) return null;
+  
+  // Use flat/matte material when flatShading is enabled
+  if (flatShading) {
+    return (
+      <mesh ref={meshRef} geometry={geometry} castShadow receiveShadow>
+        <meshLambertMaterial
+          color={modelColor}
+          emissive={modelEmissive}
+          emissiveIntensity={0.1}
+          wireframe={wireframe}
+          side={THREE.DoubleSide}
+          flatShading={true}
+        />
+      </mesh>
+    );
+  }
   
   return (
     <mesh ref={meshRef} geometry={geometry} castShadow receiveShadow>
@@ -303,6 +320,13 @@ export function Viewer({ onCapture, captureRef: externalCaptureRef, onCompile, o
             ⬡
           </button>
           <button
+            className={`control-btn ${viewerState.flatShading ? 'active' : ''}`}
+            onClick={() => updateViewerState({ flatShading: !viewerState.flatShading })}
+            title="Toggle Flat/Matte Shading"
+          >
+            ◧
+          </button>
+          <button
             className={`control-btn ${viewerState.showGrid ? 'active' : ''}`}
             onClick={() => updateViewerState({ showGrid: !viewerState.showGrid })}
             title="Toggle Grid"
@@ -364,6 +388,7 @@ export function Viewer({ onCapture, captureRef: externalCaptureRef, onCompile, o
           <Model 
             geometry={geometry} 
             wireframe={viewerState.wireframe}
+            flatShading={viewerState.flatShading}
             modelColor={themeColors.modelColor}
             modelEmissive={themeColors.modelEmissive}
           />

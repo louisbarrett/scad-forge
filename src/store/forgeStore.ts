@@ -1079,6 +1079,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   
   viewerState: {
     wireframe: false,
+    flatShading: false,
     showAxes: true,
     showGrid: true,
     autoRotate: false,

@@ -138,6 +138,7 @@ export interface EngineStatus {
 
 export interface ViewerState {
   wireframe: boolean;
+  flatShading: boolean;
   showAxes: boolean;
   showGrid: boolean;
   autoRotate: boolean;
