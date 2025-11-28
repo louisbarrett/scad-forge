@@ -253,6 +253,41 @@ body {
   color: var(--bg-deepest);
 }
 
+/* Undo/Redo Button Group */
+.undo-redo-group {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-dark);
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+}
+
+.undo-redo-group .nav-btn {
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.undo-redo-group .nav-btn:hover:not(.disabled) {
+  background: var(--bg-lighter);
+  color: var(--accent-primary);
+}
+
+.undo-redo-group .nav-btn.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  color: var(--text-muted);
+}
+
+.undo-redo-group .nav-btn.disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: transparent;
+}
+
 /* Theme Selector */
 .theme-selector {
   display: flex;

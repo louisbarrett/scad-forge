@@ -1,11 +1,11 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { CodeEditor } from './components/CodeEditor';
 import { Viewer } from './components/Viewer';
 import { MutationPanel } from './components/MutationPanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import { VLMPanel } from './components/VLMPanel';
 import { ChatPanel } from './components/ChatPanel';
-import { useForgeStore, THEME_PRESETS, applyTheme } from './store/forgeStore';
+import { useForgeStore, THEME_PRESETS, applyTheme, selectCanUndo, selectCanRedo } from './store/forgeStore';
 import { getEngine } from './engine/openscad';
 import type { SceneCapture, ThemePreset } from './types';
 import './App.css';
@@ -19,12 +19,18 @@ function App() {
   const {
     code,
     themeConfig,
+    historyIndex,
     setTheme,
     setRenderResult,
     setEngineStatus,
     addCapture,
     pushPatch,
+    undo,
+    redo,
   } = useForgeStore();
+  
+  const canUndo = useForgeStore(selectCanUndo);
+  const canRedo = useForgeStore(selectCanRedo);
   
   // Initialize theme on mount
   useEffect(() => {
@@ -118,6 +124,39 @@ function App() {
     setTheme(preset);
   }, [setTheme]);
   
+  // Track if we've mounted to avoid initial recompile
+  const hasMounted = useRef(false);
+  const prevHistoryIndex = useRef(historyIndex);
+  
+  // Auto-recompile when navigating history (undo/redo)
+  useEffect(() => {
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      prevHistoryIndex.current = historyIndex;
+      return;
+    }
+    
+    // Only recompile if historyIndex changed (undo/redo action)
+    if (prevHistoryIndex.current !== historyIndex && engineReady) {
+      prevHistoryIndex.current = historyIndex;
+      handleCompile();
+    }
+  }, [historyIndex, engineReady, handleCompile]);
+  
+  // Undo handler
+  const handleUndo = useCallback(() => {
+    if (canUndo) {
+      undo();
+    }
+  }, [canUndo, undo]);
+  
+  // Redo handler
+  const handleRedo = useCallback(() => {
+    if (canRedo) {
+      redo();
+    }
+  }, [canRedo, redo]);
+  
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -128,18 +167,18 @@ function App() {
       
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
-        useForgeStore.getState().undo();
+        handleUndo();
       }
       
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
         e.preventDefault();
-        useForgeStore.getState().redo();
+        handleRedo();
       }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleCompile]);
+  }, [handleCompile, handleUndo, handleRedo]);
   
   return (
     <div className="app">
@@ -177,6 +216,26 @@ function App() {
                 <option key={key} value={key}>{theme.name}</option>
               ))}
             </select>
+          </div>
+          
+          {/* Undo/Redo Buttons */}
+          <div className="undo-redo-group">
+            <button
+              className={`nav-btn undo-btn ${!canUndo ? 'disabled' : ''}`}
+              onClick={handleUndo}
+              disabled={!canUndo}
+              title="Undo (Ctrl+Z)"
+            >
+              ↶ Undo
+            </button>
+            <button
+              className={`nav-btn redo-btn ${!canRedo ? 'disabled' : ''}`}
+              onClick={handleRedo}
+              disabled={!canRedo}
+              title="Redo (Ctrl+Y)"
+            >
+              ↷ Redo
+            </button>
           </div>
           
           <button
