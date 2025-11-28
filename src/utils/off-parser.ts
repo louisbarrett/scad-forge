@@ -102,6 +102,10 @@ export function parseOFF(content: string): ParsedOFF {
 
 /**
  * Convert parsed OFF data to THREE.js BufferGeometry
+ * 
+ * Note: OpenSCAD uses Z-up coordinate system, Three.js uses Y-up.
+ * We apply the coordinate transformation here: (x, y, z) -> (x, z, -y)
+ * This is equivalent to rotating -90 degrees around the X axis.
  */
 export function offToBufferGeometry(parsed: ParsedOFF): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
@@ -114,6 +118,10 @@ export function offToBufferGeometry(parsed: ParsedOFF): THREE.BufferGeometry {
   // Default color (yellow-ish, like OpenSCAD default)
   const defaultColor: [number, number, number] = [0.98, 0.84, 0.17];
   
+  // Helper to convert from OpenSCAD Z-up to Three.js Y-up
+  // Rotation of -90° around X axis: (x, y, z) -> (x, z, -y)
+  const convertCoords = (v: Vertex): [number, number, number] => [v.x, v.z, -v.y];
+  
   for (const face of parsed.faces) {
     const faceColor = face.color 
       ? [face.color[0], face.color[1], face.color[2]] 
@@ -125,10 +133,10 @@ export function offToBufferGeometry(parsed: ParsedOFF): THREE.BufferGeometry {
       const v1 = parsed.vertices[face.vertices[i]];
       const v2 = parsed.vertices[face.vertices[i + 1]];
       
-      // Add triangle vertices
-      positions.push(v0.x, v0.y, v0.z);
-      positions.push(v1.x, v1.y, v1.z);
-      positions.push(v2.x, v2.y, v2.z);
+      // Add triangle vertices (converted to Y-up coordinate system)
+      positions.push(...convertCoords(v0));
+      positions.push(...convertCoords(v1));
+      positions.push(...convertCoords(v2));
       
       // Add colors for each vertex
       if (hasColors) {
