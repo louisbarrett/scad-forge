@@ -96,6 +96,7 @@ interface WorkerResult {
 /**
  * Real OpenSCAD WASM Engine
  * Uses the actual OpenSCAD WASM module for accurate rendering
+ * OPTIMIZED: Reuses worker instance, supports compilation cancellation
  */
 export class WASMOpenSCADEngine implements IOpenSCADEngine {
   private worker: Worker | null = null;
@@ -105,6 +106,7 @@ export class WASMOpenSCADEngine implements IOpenSCADEngine {
   private pendingReject: ((error: Error) => void) | null = null;
   private currentStdout: string[] = [];
   private currentStderr: string[] = [];
+  private compilationId = 0;
   
   async initialize(): Promise<void> {
     if (this.initPromise) return this.initPromise;
@@ -188,6 +190,17 @@ export class WASMOpenSCADEngine implements IOpenSCADEngine {
     
     const startTime = performance.now();
     
+    // Cancel any pending compilation by incrementing ID
+    this.compilationId++;
+    const thisCompilationId = this.compilationId;
+    
+    // Reject previous pending promise if any (cancellation)
+    if (this.pendingReject) {
+      this.pendingReject(new Error('Compilation superseded'));
+      this.pendingResolve = null;
+      this.pendingReject = null;
+    }
+    
     // Reset output collectors
     this.currentStdout = [];
     this.currentStderr = [];
@@ -200,8 +213,14 @@ export class WASMOpenSCADEngine implements IOpenSCADEngine {
         this.worker!.postMessage({
           code,
           format: 'off',
+          cancelId: thisCompilationId,
         });
       });
+      
+      // Check if this compilation was superseded
+      if (thisCompilationId !== this.compilationId) {
+        return { success: false, error: 'Compilation cancelled' };
+      }
       
       if (!result.success) {
         // Parse errors from stderr

@@ -54,15 +54,26 @@ function App() {
     const currentCode = useForgeStore.getState().code;
     
     setEngineStatus({ compiling: true });
-    setRenderResult(null);
     
     try {
       const result = await engine.compile(currentCode);
+      
+      // Don't update if compilation was cancelled/superseded
+      if (result.error === 'Compilation cancelled' || result.error === 'Compilation superseded') {
+        return;
+      }
+      
       setRenderResult(result);
     } catch (error) {
+      // Ignore cancellation errors
+      const errorMsg = error instanceof Error ? error.message : 'Compilation failed';
+      if (errorMsg === 'Compilation superseded') {
+        return;
+      }
+      
       setRenderResult({
         success: false,
-        error: error instanceof Error ? error.message : 'Compilation failed',
+        error: errorMsg,
       });
     } finally {
       setEngineStatus({ compiling: false });

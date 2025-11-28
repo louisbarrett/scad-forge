@@ -414,7 +414,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     minimap: false,
     wordWrap: false,
     autoCompile: true,
-    compileDelay: 1000,
+    compileDelay: 1500, // Increased delay to reduce unnecessary recompilations
   },
   
   captures: [],

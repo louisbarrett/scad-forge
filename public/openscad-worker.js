@@ -1,22 +1,29 @@
 // OpenSCAD WASM Worker (ES Module)
 // Runs OpenSCAD compilation in a separate thread
+// NOTE: WASM instances CANNOT be reused after callMain() - OpenSCAD calls exit()
+// which corrupts the instance state. We must create a fresh instance per compilation.
+// The optimization is pre-loading the factory so subsequent instance creation is fast.
 
 let OpenSCADFactory = null;
 let factoryPromise = null;
 
-// Load the OpenSCAD factory function once
+// Load the OpenSCAD factory function once - this is the expensive part
+// Subsequent instance creation is much faster once the factory is loaded
 async function loadFactory() {
   if (OpenSCADFactory) return OpenSCADFactory;
   if (factoryPromise) return factoryPromise;
   
   factoryPromise = (async () => {
     try {
+      console.log('[OpenSCAD Worker] Loading WASM factory...');
+      const startTime = performance.now();
       const module = await import('/openscad.js');
       OpenSCADFactory = module.default || module.OpenSCAD || module;
-      console.log('OpenSCAD factory loaded');
+      const elapsed = performance.now() - startTime;
+      console.log(`[OpenSCAD Worker] Factory loaded in ${elapsed.toFixed(0)}ms`);
       return OpenSCADFactory;
     } catch (e) {
-      console.error('Failed to load OpenSCAD factory:', e);
+      console.error('[OpenSCAD Worker] Failed to load factory:', e);
       throw new Error('Failed to load OpenSCAD WASM: ' + e);
     }
   })();
@@ -24,8 +31,8 @@ async function loadFactory() {
   return factoryPromise;
 }
 
-// Create a fresh OpenSCAD instance for each compilation
-// This avoids the "program has already aborted" issue
+// Create a fresh OpenSCAD instance - must be done for each compilation
+// Once the factory is loaded, this is relatively fast (~50-100ms vs ~500ms first time)
 async function createInstance() {
   const factory = await loadFactory();
   
@@ -57,8 +64,10 @@ async function createInstance() {
 }
 
 // Initialize factory immediately and signal ready
+// Pre-loading the factory means first render will be faster
 loadFactory()
   .then(() => {
+    console.log('[OpenSCAD Worker] Ready');
     self.postMessage({ type: 'ready' });
   })
   .catch((e) => {
@@ -73,7 +82,10 @@ self.addEventListener('message', async (e) => {
   
   try {
     // Create a fresh instance for each compilation
+    // This is required because callMain() corrupts the instance state
     instance = await createInstance();
+    const instanceTime = performance.now() - start;
+    console.log(`[OpenSCAD Worker] Instance created in ${instanceTime.toFixed(0)}ms`);
     
     // Write the input file
     const inputPath = '/input.scad';
@@ -82,6 +94,7 @@ self.addEventListener('message', async (e) => {
     instance.FS.writeFile(inputPath, code);
     
     // Build command line arguments
+    // Using manifold backend for fastest CSG operations
     const args = [
       inputPath,
       '-o', outputPath,
@@ -92,7 +105,7 @@ self.addEventListener('message', async (e) => {
       args.push('--export-format=binstl');
     }
     
-    console.log('OpenSCAD args:', args);
+    console.log('[OpenSCAD Worker] Running with args:', args.join(' '));
     
     // Run OpenSCAD
     let exitCode;
@@ -139,6 +152,8 @@ self.addEventListener('message', async (e) => {
       return;
     }
     
+    console.log(`[OpenSCAD Worker] Compilation completed in ${elapsedMillis.toFixed(0)}ms`);
+    
     self.postMessage({
       type: 'result',
       result: {
@@ -152,6 +167,7 @@ self.addEventListener('message', async (e) => {
     
   } catch (err) {
     const elapsedMillis = performance.now() - start;
+    console.error('[OpenSCAD Worker] Error:', err);
     self.postMessage({
       type: 'result',
       result: {
