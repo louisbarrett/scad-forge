@@ -6,6 +6,48 @@
 
 let OpenSCADFactory = null;
 let factoryPromise = null;
+let fontsCache = null; // Cache loaded font data
+
+// Liberation fonts bundled with the app - these are open source fonts
+// that OpenSCAD can use for text() operations
+const FONT_FILES = [
+  'LiberationSans-Regular.ttf',
+  'LiberationSans-Bold.ttf',
+  'LiberationSans-Italic.ttf',
+  'LiberationSans-BoldItalic.ttf',
+  'LiberationMono-Regular.ttf',
+  'LiberationMono-Bold.ttf',
+  'LiberationSerif-Regular.ttf',
+  'LiberationSerif-Bold.ttf',
+];
+
+// Load fonts from public/fonts/ and cache them
+async function loadFonts() {
+  if (fontsCache) return fontsCache;
+  
+  console.log('[OpenSCAD Worker] Loading fonts...');
+  const fonts = {};
+  
+  await Promise.all(
+    FONT_FILES.map(async (filename) => {
+      try {
+        const response = await fetch(`/fonts/${filename}`);
+        if (response.ok) {
+          const buffer = await response.arrayBuffer();
+          fonts[filename] = new Uint8Array(buffer);
+          console.log(`[OpenSCAD Worker] Loaded font: ${filename}`);
+        } else {
+          console.warn(`[OpenSCAD Worker] Font not found: ${filename}`);
+        }
+      } catch (e) {
+        console.warn(`[OpenSCAD Worker] Failed to load font ${filename}:`, e);
+      }
+    })
+  );
+  
+  fontsCache = fonts;
+  return fonts;
+}
 
 // Load the OpenSCAD factory function once - this is the expensive part
 // Subsequent instance creation is much faster once the factory is loaded
@@ -35,6 +77,7 @@ async function loadFactory() {
 // Once the factory is loaded, this is relatively fast (~50-100ms vs ~500ms first time)
 async function createInstance() {
   const factory = await loadFactory();
+  const fonts = await loadFonts();
   
   const instance = await factory({
     noInitialRun: true,
@@ -52,22 +95,68 @@ async function createInstance() {
     },
   });
   
-  // Create necessary directories
-  try {
-    instance.FS.mkdir('/fonts');
-  } catch (e) {
-    // Directory might already exist
+  // Create font directories - OpenSCAD looks in several standard locations
+  const fontDirs = [
+    '/fonts',
+    '/usr/share/fonts',
+    '/usr/share/fonts/truetype',
+    '/usr/share/fonts/truetype/liberation',
+    '/home/web_user/.fonts',
+  ];
+  
+  for (const dir of fontDirs) {
+    try {
+      // Create directory hierarchy
+      const parts = dir.split('/').filter(Boolean);
+      let path = '';
+      for (const part of parts) {
+        path += '/' + part;
+        try {
+          instance.FS.mkdir(path);
+        } catch (e) {
+          // Directory might already exist
+        }
+      }
+    } catch (e) {
+      // Ignore errors
+    }
   }
+  
+  // Load bundled fonts into multiple locations for maximum compatibility
+  for (const [filename, data] of Object.entries(fonts)) {
+    const locations = [
+      `/fonts/${filename}`,
+      `/usr/share/fonts/truetype/liberation/${filename}`,
+      `/home/web_user/.fonts/${filename}`,
+    ];
+    
+    for (const loc of locations) {
+      try {
+        instance.FS.writeFile(loc, data);
+      } catch (e) {
+        // Ignore errors for individual locations
+      }
+    }
+  }
+  
+  console.log(`[OpenSCAD Worker] Fonts installed to virtual filesystem`);
+  
+  // Set environment variables for OpenSCAD to find fonts
+  if (instance.ENV) {
+    instance.ENV['OPENSCAD_FONT_PATH'] = '/fonts:/usr/share/fonts/truetype/liberation';
+    instance.ENV['HOME'] = '/home/web_user';
+  }
+  
   instance.FS.chdir('/');
   
   return instance;
 }
 
-// Initialize factory immediately and signal ready
-// Pre-loading the factory means first render will be faster
-loadFactory()
+// Initialize factory and fonts immediately and signal ready
+// Pre-loading the factory and fonts means first render will be faster
+Promise.all([loadFactory(), loadFonts()])
   .then(() => {
-    console.log('[OpenSCAD Worker] Ready');
+    console.log('[OpenSCAD Worker] Ready (factory and fonts loaded)');
     self.postMessage({ type: 'ready' });
   })
   .catch((e) => {

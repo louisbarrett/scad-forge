@@ -56,7 +56,28 @@ OPENSCAD TECHNIQUES:
    - offset(r, delta, chamfer) - 2D offset/inset
    - projection(cut) - project 3D to 2D
 
-5. MODULES AND FUNCTIONS:
+5. TEXT AND EMBOSSING - For labels, engravings, and decorations:
+   - text(str, size, font, halign, valign, spacing, direction) - 2D text
+   - AVAILABLE FONTS (you MUST use these exact names):
+     * "Liberation Sans" - sans-serif (default)
+     * "Liberation Sans:style=Bold" - bold sans-serif
+     * "Liberation Sans:style=Italic" - italic sans-serif
+     * "Liberation Sans:style=Bold Italic" - bold italic sans-serif
+     * "Liberation Mono" - monospace font
+     * "Liberation Mono:style=Bold" - bold monospace
+     * "Liberation Serif" - serif font
+     * "Liberation Serif:style=Bold" - bold serif
+   - EMBOSS example (raised text):
+     linear_extrude(height=2) text("LABEL", size=10, font="Liberation Sans:style=Bold", halign="center");
+   - ENGRAVE example (cut into surface):
+     difference() {
+       cube([50, 20, 5]);
+       translate([25, 10, 4]) linear_extrude(height=2)
+         text("TEXT", size=8, font="Liberation Sans", halign="center", valign="center");
+     }
+   - NEVER use generic fonts like "Sans", "Arial", "Helvetica" - they don't exist in this environment
+
+6. MODULES AND FUNCTIONS:
    - module name(params) { } - reusable geometry blocks
    - function name(params) = expr; - computational functions
    - children() - reference child objects in modules
@@ -64,7 +85,7 @@ OPENSCAD TECHNIQUES:
    - let (var = expr) - local variable binding
    - Use parameters for all dimensions to enable easy modification
 
-6. SPECIAL VARIABLES - Rendering quality:
+7. SPECIAL VARIABLES - Rendering quality:
    - $fn - number of fragments (higher = smoother curves)
    - $fs - minimum fragment size
    - $fa - minimum fragment angle
@@ -126,14 +147,35 @@ OPENSCAD TECHNIQUES:
    - offset(r, delta, chamfer) - 2D offset/inset
    - projection(cut) - project 3D to 2D
 
-5. MODULES AND FUNCTIONS:
+5. TEXT AND EMBOSSING - For labels, engravings, and decorations:
+   - text(str, size, font, halign, valign, spacing, direction) - 2D text
+   - AVAILABLE FONTS (you MUST use these exact names):
+     * "Liberation Sans" - sans-serif (default)
+     * "Liberation Sans:style=Bold" - bold sans-serif
+     * "Liberation Sans:style=Italic" - italic sans-serif
+     * "Liberation Sans:style=Bold Italic" - bold italic sans-serif
+     * "Liberation Mono" - monospace font
+     * "Liberation Mono:style=Bold" - bold monospace
+     * "Liberation Serif" - serif font
+     * "Liberation Serif:style=Bold" - bold serif
+   - EMBOSS example (raised text):
+     linear_extrude(height=2) text("LABEL", size=10, font="Liberation Sans:style=Bold", halign="center");
+   - ENGRAVE example (cut into surface):
+     difference() {
+       cube([50, 20, 5]);
+       translate([25, 10, 4]) linear_extrude(height=2)
+         text("TEXT", size=8, font="Liberation Sans", halign="center", valign="center");
+     }
+   - NEVER use generic fonts like "Sans", "Arial", "Helvetica" - they don't exist in this environment
+
+6. MODULES AND FUNCTIONS:
    - module name(params) { } - reusable geometry blocks
    - function name(params) = expr; - computational functions
    - children() - reference child objects in modules
    - for (i = [start:step:end]) - iteration loops
    - Use parameters for all dimensions to enable easy modification
 
-6. SPECIAL VARIABLES - Rendering quality:
+7. SPECIAL VARIABLES - Rendering quality:
    - $fn - number of fragments (higher = smoother curves)
    - $fs - minimum fragment size
    - $fa - minimum fragment angle
