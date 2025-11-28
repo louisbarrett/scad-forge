@@ -464,6 +464,69 @@ export class WASMOpenSCADEngine implements IOpenSCADEngine {
   }
   
   /**
+   * Import files from raw ArrayBuffer data (for restoring from storage)
+   * This is used when loading persisted files on app startup
+   */
+  async importFilesFromData(files: { name: string; data: ArrayBuffer; size: number; type: string }[]): Promise<ImportedFile[]> {
+    if (!this.ready || !this.worker) {
+      throw new Error('Engine not initialized');
+    }
+    
+    if (files.length === 0) {
+      return [];
+    }
+    
+    const importedFiles: ImportedFile[] = [];
+    const fileDataArray: { name: string; data: ArrayBuffer }[] = [];
+    
+    for (const file of files) {
+      fileDataArray.push({
+        name: file.name,
+        data: file.data,
+      });
+      
+      const importedFile: ImportedFile = {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        timestamp: Date.now(),
+      };
+      importedFiles.push(importedFile);
+      
+      // Track locally
+      const existingIndex = this.importedFiles.findIndex(f => f.name === file.name);
+      if (existingIndex >= 0) {
+        this.importedFiles[existingIndex] = importedFile;
+      } else {
+        this.importedFiles.push(importedFile);
+      }
+    }
+    
+    // Send to worker
+    return new Promise((resolve, reject) => {
+      const handler = (e: MessageEvent) => {
+        if (e.data.type === 'import-complete') {
+          this.worker?.removeEventListener('message', handler);
+          console.log(`[OpenSCAD Engine] Restored ${e.data.count} files from storage`);
+          resolve(importedFiles);
+        }
+      };
+      
+      this.worker!.addEventListener('message', handler);
+      this.worker!.postMessage({
+        type: 'import',
+        files: fileDataArray,
+      });
+      
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        this.worker?.removeEventListener('message', handler);
+        reject(new Error('File restore timed out'));
+      }, 10000);
+    });
+  }
+  
+  /**
    * Remove a file from the worker's cache
    */
   async removeFile(filename: string): Promise<void> {

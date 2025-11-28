@@ -7,6 +7,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { useForgeStore, THEME_PRESETS, applyTheme, selectCanUndo, selectCanRedo } from './store/forgeStore';
 import { getEngine, WASMOpenSCADEngine } from './engine/openscad';
 import { getLLMService, extractCodeFromResponse } from './services/llm';
+import { loadAllFiles, saveFiles, deleteFile as deleteStoredFile, clearAllFiles } from './utils/file-storage';
 import type { ThemePreset } from './types';
 import './App.css';
 
@@ -179,7 +180,7 @@ function App() {
     applyTheme(themeConfig.preset);
   }, [themeConfig.preset]);
   
-  // Initialize engine
+  // Initialize engine and restore imported files
   useEffect(() => {
     const init = async () => {
       setEngineStatus({ ready: false, compiling: false });
@@ -194,6 +195,33 @@ function App() {
       
       setEngineReady(engine.isReady());
       setEngineStatus({ ready: true });
+      
+      // Restore imported files from IndexedDB
+      try {
+        const storedFiles = await loadAllFiles();
+        if (storedFiles.length > 0) {
+          console.log(`[App] Restoring ${storedFiles.length} imported file(s) from storage`);
+          
+          // Re-import files to the worker
+          if (engine instanceof WASMOpenSCADEngine) {
+            const filesForWorker = storedFiles.map(f => ({
+              name: f.name,
+              data: f.data,
+              size: f.size,
+              type: f.type,
+            }));
+            const restored = await engine.importFilesFromData(filesForWorker);
+            
+            // Update store with restored files
+            addImportedFiles(restored);
+            
+            addSystemMessage('info', `Restored ${restored.length} imported file(s) from previous session`, 'import');
+          }
+        }
+      } catch (error) {
+        console.error('[App] Failed to restore imported files:', error);
+        addSystemMessage('warning', 'Failed to restore some imported files from previous session', 'import');
+      }
       
       // Initial compile
       handleCompile();
@@ -421,10 +449,6 @@ function App() {
   // Supported import file types
   const SUPPORTED_IMPORT_TYPES = '.stl,.off,.obj,.dxf,.svg,.png,.jpg,.jpeg';
   
-  const handleImportClick = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-  
   const handleFileSelect = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -439,6 +463,18 @@ function App() {
       
       // Add to store
       addImportedFiles(imported);
+      
+      // Persist to IndexedDB for future sessions
+      const filesToStore = await Promise.all(
+        fileArray.map(async (file) => ({
+          name: file.name,
+          data: await file.arrayBuffer(),
+          size: file.size,
+          type: file.type || getFileTypeFromName(file.name),
+          timestamp: Date.now(),
+        }))
+      );
+      await saveFiles(filesToStore);
       
       addSystemMessage('info', `Successfully imported ${imported.length} file(s)`, 'import');
       
@@ -458,11 +494,31 @@ function App() {
     }
   }, [addImportedFiles, addSystemMessage]);
   
+  // Helper to get file type from name
+  const getFileTypeFromName = (filename: string): string => {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'stl': return 'model/stl';
+      case 'off': return 'model/off';
+      case 'obj': return 'model/obj';
+      case 'dxf': return 'image/vnd.dxf';
+      case 'svg': return 'image/svg+xml';
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      default: return 'application/octet-stream';
+    }
+  };
+  
   const handleRemoveImportedFile = useCallback(async (filename: string) => {
     try {
       const engine = await getEngine();
       await engine.removeFile(filename);
       removeImportedFile(filename);
+      
+      // Also remove from persistent storage
+      await deleteStoredFile(filename);
+      
       addSystemMessage('info', `Removed ${filename}`, 'import');
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -475,6 +531,10 @@ function App() {
       const engine = await getEngine();
       await engine.clearImportedFiles();
       clearImportedFiles();
+      
+      // Also clear from persistent storage
+      await clearAllFiles();
+      
       addSystemMessage('info', 'Cleared all imported files', 'import');
       setShowImportPanel(false);
     } catch (error) {
