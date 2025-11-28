@@ -14,6 +14,7 @@ type RightPanel = 'chat' | 'mutations' | 'history' | 'vlm';
 
 // Storage key for panel sizes
 const PANEL_SIZES_KEY = 'scad-forge-panel-sizes';
+const EDITOR_COLLAPSED_KEY = 'scad-forge-editor-collapsed';
 
 interface PanelSizes {
   editorWidth: number;  // Left-anchored - absolute width
@@ -54,6 +55,24 @@ function savePanelSizes(sizes: PanelSizes): void {
   }
 }
 
+function loadEditorCollapsed(): boolean {
+  try {
+    const stored = localStorage.getItem(EDITOR_COLLAPSED_KEY);
+    return stored === 'true';
+  } catch (e) {
+    console.warn('Failed to load editor collapsed state:', e);
+  }
+  return false;
+}
+
+function saveEditorCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(EDITOR_COLLAPSED_KEY, String(collapsed));
+  } catch (e) {
+    console.warn('Failed to save editor collapsed state:', e);
+  }
+}
+
 function App() {
   const [rightPanel, setRightPanel] = useState<RightPanel>('chat');
   const [engineReady, setEngineReady] = useState(false);
@@ -62,6 +81,7 @@ function App() {
   // Resizable panel state - editor anchors left, side-pane anchors right
   const [panelSizes, setPanelSizes] = useState<PanelSizes>(loadPanelSizes);
   const [isDragging, setIsDragging] = useState<'left' | 'right' | null>(null);
+  const [editorCollapsed, setEditorCollapsed] = useState<boolean>(loadEditorCollapsed);
   const mainRef = useRef<HTMLDivElement>(null);
   
   const {
@@ -302,6 +322,15 @@ function App() {
     savePanelSizes(DEFAULT_PANEL_SIZES);
   }, []);
   
+  // Toggle editor collapsed state
+  const toggleEditorCollapsed = useCallback(() => {
+    setEditorCollapsed(prev => {
+      const newState = !prev;
+      saveEditorCollapsed(newState);
+      return newState;
+    });
+  }, []);
+  
   
   return (
     <div className="app">
@@ -398,21 +427,48 @@ function App() {
         {/* Resize overlay when dragging */}
         {isDragging && <div className="resize-overlay" />}
         
+        {/* Collapsed Editor Toggle */}
+        {editorCollapsed && (
+          <button 
+            className="editor-expand-btn"
+            onClick={toggleEditorCollapsed}
+            title="Expand editor (click to show)"
+          >
+            <span className="expand-icon">⟩</span>
+            <span className="expand-label">Code</span>
+          </button>
+        )}
+        
         {/* Editor - anchored left */}
         <div 
-          className="editor-pane" 
-          style={{ width: `${panelSizes.editorWidth}%`, flexShrink: 0 }}
+          className={`editor-pane ${editorCollapsed ? 'collapsed' : ''}`}
+          style={{ 
+            width: editorCollapsed ? '0%' : `${panelSizes.editorWidth}%`, 
+            flexShrink: 0,
+            overflow: editorCollapsed ? 'hidden' : undefined,
+          }}
         >
+          <div className="editor-collapse-toggle">
+            <button 
+              className="collapse-btn"
+              onClick={toggleEditorCollapsed}
+              title="Collapse editor"
+            >
+              <span className="collapse-icon">⟨</span>
+            </button>
+          </div>
           <CodeEditor onCompile={handleCompile} />
         </div>
         
-        {/* Left resize handle */}
-        <div 
-          className={`resize-handle resize-handle-h ${isDragging === 'left' ? 'dragging' : ''}`}
-          onMouseDown={handleResizeStart('left')}
-          onDoubleClick={handleDoubleClick}
-          title="Drag to resize • Double-click to reset"
-        />
+        {/* Left resize handle - hidden when collapsed */}
+        {!editorCollapsed && (
+          <div 
+            className={`resize-handle resize-handle-h ${isDragging === 'left' ? 'dragging' : ''}`}
+            onMouseDown={handleResizeStart('left')}
+            onDoubleClick={handleDoubleClick}
+            title="Drag to resize • Double-click to reset"
+          />
+        )}
         
         {/* Viewer - flexible center, takes remaining space */}
         <div 

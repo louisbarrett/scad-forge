@@ -440,6 +440,99 @@ body {
 .editor-pane {
   min-width: 200px;
   flex-shrink: 0;
+  position: relative;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.editor-pane.collapsed {
+  min-width: 0;
+  width: 0 !important;
+}
+
+/* Editor collapse toggle button */
+.editor-collapse-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 20;
+}
+
+.collapse-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-lighter);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-dim);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+}
+
+.collapse-btn:hover {
+  opacity: 1;
+  background: var(--bg-light);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.collapse-icon {
+  font-weight: bold;
+}
+
+/* Editor expand button when collapsed */
+.editor-expand-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 8px;
+  min-width: 42px;
+  background: linear-gradient(180deg, var(--bg-medium), var(--bg-dark));
+  border: none;
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.editor-expand-btn:hover {
+  background: linear-gradient(180deg, var(--bg-light), var(--bg-medium));
+  color: var(--accent-primary);
+  border-right-color: var(--accent-primary);
+}
+
+.editor-expand-btn .expand-icon {
+  font-size: 16px;
+  font-weight: bold;
+  writing-mode: horizontal-tb;
+  animation: pulseExpand 2s ease-in-out infinite;
+}
+
+.editor-expand-btn .expand-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+@keyframes pulseExpand {
+  0%, 100% { 
+    transform: translateX(0);
+    opacity: 0.7;
+  }
+  50% { 
+    transform: translateX(3px);
+    opacity: 1;
+  }
 }
 
 .viewer-pane {
