@@ -645,7 +645,12 @@ function App() {
             minWidth: 0, // Allow flex item to shrink below content size
           }}
         >
-          <Viewer onCapture={handleCapture} captureRef={triggerCaptureRef} />
+          <Viewer 
+            onCapture={handleCapture} 
+            captureRef={triggerCaptureRef}
+            onCompile={handleCompile}
+            onCancelCompile={handleCancelCompile}
+          />
         </div>
         
         {/* Right resize handle */}

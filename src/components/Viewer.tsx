@@ -154,9 +154,11 @@ function ThemedGrid({ position, cellColor, sectionColor }: ThemedGridProps) {
 interface ViewerProps {
   onCapture?: (dataUrl: string, cameraPos: [number, number, number], cameraTarget: [number, number, number]) => void;
   captureRef?: React.MutableRefObject<(() => Promise<string | null>) | null>;
+  onCompile?: () => void;
+  onCancelCompile?: () => void;
 }
 
-export function Viewer({ onCapture, captureRef: externalCaptureRef }: ViewerProps) {
+export function Viewer({ onCapture, captureRef: externalCaptureRef, onCompile, onCancelCompile }: ViewerProps) {
   const internalCaptureRef = useRef<(() => void) | null>(null);
   const capturePromiseRef = useRef<{ resolve: (url: string | null) => void } | null>(null);
   const themeColors = useThemeColors();
@@ -233,6 +235,25 @@ export function Viewer({ onCapture, captureRef: externalCaptureRef }: ViewerProp
           {engineStatus.compiling && <span className="compiling-badge">Compiling...</span>}
         </span>
         <div className="viewer-controls">
+          {engineStatus.compiling ? (
+            <button
+              className="control-btn render-btn compiling"
+              onClick={onCancelCompile}
+              title="Cancel render (Esc)"
+            >
+              <span className="btn-spinner"></span>
+              ✕
+            </button>
+          ) : (
+            <button
+              className="control-btn render-btn"
+              onClick={onCompile}
+              title="Render (Ctrl+Enter)"
+            >
+              ▶
+            </button>
+          )}
+          <div className="controls-divider" />
           <button
             className={`control-btn ${viewerState.wireframe ? 'active' : ''}`}
             onClick={() => updateViewerState({ wireframe: !viewerState.wireframe })}
@@ -264,7 +285,7 @@ export function Viewer({ onCapture, captureRef: externalCaptureRef }: ViewerProp
           <button
             className="control-btn capture-btn"
             onClick={handleCapture}
-            title="Capture for VLM"
+            title="Capture for Vision"
           >
             📷
           </button>

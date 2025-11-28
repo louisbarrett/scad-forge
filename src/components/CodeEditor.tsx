@@ -207,15 +207,6 @@ export function CodeEditor({ onCompile }: CodeEditorProps) {
           model.scad
           {selectedMutation && <span className="preview-badge">PREVIEW</span>}
         </span>
-        <div className="editor-actions">
-          <button
-            className="action-btn compile-btn"
-            onClick={onCompile}
-            title="Compile (Ctrl+Enter)"
-          >
-            ▶ Render
-          </button>
-        </div>
       </div>
       
       <Editor
