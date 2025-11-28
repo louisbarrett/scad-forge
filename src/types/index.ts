@@ -164,6 +164,14 @@ export interface SystemMessage {
   source?: string; // e.g., 'openscad', 'llm', 'system'
 }
 
+// Imported file (STL, DXF, SVG, etc.)
+export interface ImportedFile {
+  name: string;
+  size: number;
+  type: string;
+  timestamp: number;
+}
+
 // OpenSCAD specific types
 export interface ScadVariable {
   name: string;

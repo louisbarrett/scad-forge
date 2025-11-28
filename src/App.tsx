@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useCallback, useState, useRef, type MouseEvent as ReactMouseEvent, type ChangeEvent } from 'react';
 import { CodeEditor } from './components/CodeEditor';
 import { Viewer } from './components/Viewer';
 import { MutationPanel } from './components/MutationPanel';
@@ -412,6 +412,125 @@ function App() {
   // Export STL handler
   const [isExporting, setIsExporting] = useState(false);
   
+  // Import file handler
+  const [isImporting, setIsImporting] = useState(false);
+  const [showImportPanel, setShowImportPanel] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { importedFiles, addImportedFiles, removeImportedFile, clearImportedFiles } = useForgeStore();
+  
+  // Supported import file types
+  const SUPPORTED_IMPORT_TYPES = '.stl,.off,.obj,.dxf,.svg,.png,.jpg,.jpeg';
+  
+  const handleImportClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+  
+  const handleFileSelect = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setIsImporting(true);
+    addSystemMessage('info', `Importing ${files.length} file(s)...`, 'import');
+    
+    try {
+      const engine = await getEngine();
+      const fileArray = Array.from(files);
+      const imported = await engine.importFiles(fileArray);
+      
+      // Add to store
+      addImportedFiles(imported);
+      
+      addSystemMessage('info', `Successfully imported ${imported.length} file(s)`, 'import');
+      
+      // Show import panel if files were imported
+      if (imported.length > 0) {
+        setShowImportPanel(true);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      addSystemMessage('error', `Failed to import files: ${errorMsg}`, 'import');
+    } finally {
+      setIsImporting(false);
+      // Reset file input so same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [addImportedFiles, addSystemMessage]);
+  
+  const handleRemoveImportedFile = useCallback(async (filename: string) => {
+    try {
+      const engine = await getEngine();
+      await engine.removeFile(filename);
+      removeImportedFile(filename);
+      addSystemMessage('info', `Removed ${filename}`, 'import');
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      addSystemMessage('error', `Failed to remove file: ${errorMsg}`, 'import');
+    }
+  }, [removeImportedFile, addSystemMessage]);
+  
+  const handleClearImportedFiles = useCallback(async () => {
+    try {
+      const engine = await getEngine();
+      await engine.clearImportedFiles();
+      clearImportedFiles();
+      addSystemMessage('info', 'Cleared all imported files', 'import');
+      setShowImportPanel(false);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      addSystemMessage('error', `Failed to clear files: ${errorMsg}`, 'import');
+    }
+  }, [clearImportedFiles, addSystemMessage]);
+  
+  const insertImportCode = useCallback((filename: string) => {
+    const state = useForgeStore.getState();
+    const currentCode = state.code;
+    
+    // Generate import statement
+    const importStatement = `import("${filename}");`;
+    
+    // Check if import already exists
+    if (currentCode.includes(`import("${filename}")`)) {
+      addSystemMessage('info', `Import for ${filename} already exists in code`, 'import');
+      return;
+    }
+    
+    // Insert at the top of the code, after any initial comments
+    const lines = currentCode.split('\n');
+    let insertIndex = 0;
+    
+    // Skip past initial comments
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+      if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed === '') {
+        insertIndex = i + 1;
+      } else {
+        break;
+      }
+    }
+    
+    // Insert the import statement
+    lines.splice(insertIndex, 0, importStatement);
+    const newCode = lines.join('\n');
+    
+    // Update code and push to history
+    state.setCode(newCode);
+    state.pushPatch(`Import ${filename}`, newCode, 'user');
+    
+    addSystemMessage('info', `Added import for ${filename}`, 'import');
+    
+    // Trigger recompile
+    handleCompile();
+  }, [addSystemMessage, handleCompile]);
+  
+  // Format file size for display
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+  
   const handleExportSTL = useCallback(async () => {
     const engine = await getEngine();
     const currentCode = useForgeStore.getState().code;
@@ -676,8 +795,107 @@ function App() {
           >
             {isExporting ? '⏳ Exporting...' : '📤 Export STL'}
           </button>
+          
+          {/* Import STL Button */}
+          <label
+            htmlFor="stl-import-input"
+            className={`nav-btn import-btn ${importedFiles.length > 0 ? 'has-files' : ''} ${(isImporting || !engineReady) ? 'disabled' : ''}`}
+            title={isImporting ? 'Importing...' : 'Import STL, DXF, SVG, or image files'}
+          >
+            {isImporting ? '⏳ Importing...' : '📥 Import'}
+            {importedFiles.length > 0 && (
+              <span className="import-badge">{importedFiles.length}</span>
+            )}
+          </label>
+          <input
+            id="stl-import-input"
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={SUPPORTED_IMPORT_TYPES}
+            onChange={handleFileSelect}
+            disabled={isImporting || !engineReady}
+            className="import-file-input-hidden"
+          />
+          
+          {/* Show import panel toggle */}
+          {importedFiles.length > 0 && (
+            <button
+              className={`nav-btn import-panel-toggle ${showImportPanel ? 'active' : ''}`}
+              onClick={() => setShowImportPanel(!showImportPanel)}
+              title="Show/hide imported files"
+            >
+              📁
+            </button>
+          )}
         </nav>
       </header>
+      
+      {/* Import Panel - Floating overlay */}
+      {showImportPanel && importedFiles.length > 0 && (
+        <div className="import-panel">
+          <div className="import-panel-header">
+            <h3>📁 Imported Files ({importedFiles.length})</h3>
+            <div className="import-panel-actions">
+              <label 
+                htmlFor="stl-import-input"
+                className="import-panel-btn add"
+                title="Add more files"
+              >
+                + Add
+              </label>
+              <button 
+                className="import-panel-btn clear"
+                onClick={handleClearImportedFiles}
+                title="Clear all imported files"
+              >
+                🗑️ Clear All
+              </button>
+              <button 
+                className="import-panel-close"
+                onClick={() => setShowImportPanel(false)}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div className="import-panel-content">
+            <p className="import-hint">
+              Click a file to insert <code>import("filename")</code> into your code
+            </p>
+            <ul className="imported-files-list">
+              {importedFiles.map((file) => (
+                <li key={file.name} className="imported-file-item">
+                  <button
+                    className="imported-file-info"
+                    onClick={() => insertImportCode(file.name)}
+                    title={`Click to insert import("${file.name}")`}
+                  >
+                    <span className="file-icon">
+                      {file.type.includes('stl') ? '🔷' : 
+                       file.type.includes('svg') ? '📐' :
+                       file.type.includes('dxf') ? '📏' :
+                       file.type.includes('image') ? '🖼️' : '📄'}
+                    </span>
+                    <span className="file-name">{file.name}</span>
+                    <span className="file-size">{formatFileSize(file.size)}</span>
+                  </button>
+                  <button
+                    className="imported-file-remove"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveImportedFile(file.name);
+                    }}
+                    title={`Remove ${file.name}`}
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
       
       <main className="app-main" ref={mainRef}>
         {/* Resize overlay when dragging */}

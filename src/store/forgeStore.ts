@@ -15,6 +15,7 @@ import type {
   ThemeConfig,
   SystemMessage,
   SystemMessageType,
+  ImportedFile,
 } from '../types';
 import { DEFAULT_LLM_CONFIG } from '../services/llm';
 
@@ -982,6 +983,9 @@ interface ForgeState {
   // System console state (errors/warnings)
   systemMessages: SystemMessage[];
   
+  // Imported files (STL, DXF, etc.)
+  importedFiles: ImportedFile[];
+  
   // Actions
   setCode: (code: string) => void;
   saveCode: () => void;
@@ -1036,6 +1040,12 @@ interface ForgeState {
   addSystemMessage: (type: SystemMessageType, content: string, source?: string) => void;
   clearSystemMessages: () => void;
   getRecentSystemMessages: (count?: number) => SystemMessage[];
+  
+  // Imported files actions
+  addImportedFiles: (files: ImportedFile[]) => void;
+  removeImportedFile: (filename: string) => void;
+  clearImportedFiles: () => void;
+  getImportedFiles: () => ImportedFile[];
   
   // Reset
   reset: () => void;
@@ -1098,6 +1108,9 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   
   // System console state
   systemMessages: [],
+  
+  // Imported files
+  importedFiles: [],
   
   // Actions
   setCode: (code) => {
@@ -1373,6 +1386,30 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     return state.systemMessages.slice(-count);
   },
   
+  // Imported files actions
+  addImportedFiles: (files: ImportedFile[]) => {
+    set((state) => {
+      // Merge with existing, replacing files with same name
+      const existingNames = new Set(files.map(f => f.name));
+      const filtered = state.importedFiles.filter(f => !existingNames.has(f.name));
+      return {
+        importedFiles: [...filtered, ...files],
+      };
+    });
+  },
+  
+  removeImportedFile: (filename: string) => {
+    set((state) => ({
+      importedFiles: state.importedFiles.filter(f => f.name !== filename),
+    }));
+  },
+  
+  clearImportedFiles: () => set({ importedFiles: [] }),
+  
+  getImportedFiles: () => {
+    return get().importedFiles;
+  },
+  
   reset: () => {
     persistCode(DEFAULT_CODE);
     saveChatMessages([]);
@@ -1391,6 +1428,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
       chatHistoryIndex: -1,
       isChatStreaming: false,
       systemMessages: [],
+      importedFiles: [],
     });
   },
   

@@ -7,6 +7,7 @@
 let OpenSCADFactory = null;
 let factoryPromise = null;
 let fontsCache = null; // Cache loaded font data
+let importedFilesCache = new Map(); // Cache for imported STL/other files
 
 // Liberation fonts bundled with the app - these are open source fonts
 // that OpenSCAD can use for text() operations
@@ -167,8 +168,84 @@ Promise.all([loadFactory(), loadFonts()])
 // Collected stderr messages for error reporting
 let collectedStderr = [];
 
+// Handle file import messages
+function handleFileImport(files) {
+  if (!files || !Array.isArray(files)) return;
+  
+  for (const file of files) {
+    if (file.name && file.data) {
+      // Store in cache - will be written to FS during instance creation
+      importedFilesCache.set(file.name, new Uint8Array(file.data));
+      console.log(`[OpenSCAD Worker] Cached imported file: ${file.name} (${file.data.byteLength} bytes)`);
+    }
+  }
+}
+
+// Remove a file from the cache
+function handleFileRemove(filename) {
+  if (importedFilesCache.has(filename)) {
+    importedFilesCache.delete(filename);
+    console.log(`[OpenSCAD Worker] Removed cached file: ${filename}`);
+  }
+}
+
+// Clear all imported files
+function handleFileClear() {
+  importedFilesCache.clear();
+  console.log('[OpenSCAD Worker] Cleared all imported files');
+}
+
+// Mount imported files to an OpenSCAD instance filesystem
+function mountImportedFiles(instance) {
+  // Create imports directory
+  try {
+    instance.FS.mkdir('/imports');
+  } catch (e) {
+    // Directory might already exist
+  }
+  
+  // Write all cached files to the filesystem
+  for (const [filename, data] of importedFilesCache.entries()) {
+    try {
+      // Write to root for direct access
+      instance.FS.writeFile(`/${filename}`, data);
+      // Also write to imports directory
+      instance.FS.writeFile(`/imports/${filename}`, data);
+      console.log(`[OpenSCAD Worker] Mounted file: ${filename}`);
+    } catch (e) {
+      console.error(`[OpenSCAD Worker] Failed to mount file ${filename}:`, e);
+    }
+  }
+}
+
 self.addEventListener('message', async (e) => {
-  const { code, format } = e.data;
+  const { type, code, format, files, filename } = e.data;
+  
+  // Handle non-compilation messages
+  if (type === 'import') {
+    handleFileImport(files);
+    self.postMessage({ type: 'import-complete', count: files?.length || 0 });
+    return;
+  }
+  
+  if (type === 'remove-file') {
+    handleFileRemove(filename);
+    self.postMessage({ type: 'remove-complete', filename });
+    return;
+  }
+  
+  if (type === 'clear-files') {
+    handleFileClear();
+    self.postMessage({ type: 'clear-complete' });
+    return;
+  }
+  
+  if (type === 'list-files') {
+    const fileList = Array.from(importedFilesCache.keys());
+    self.postMessage({ type: 'file-list', files: fileList });
+    return;
+  }
+  
   const start = performance.now();
   
   // Reset collected stderr for this compilation
@@ -182,6 +259,9 @@ self.addEventListener('message', async (e) => {
     instance = await createInstance();
     const instanceTime = performance.now() - start;
     console.log(`[OpenSCAD Worker] Instance created in ${instanceTime.toFixed(0)}ms`);
+    
+    // Mount any imported files to the filesystem
+    mountImportedFiles(instance);
     
     // Write the input file
     const inputPath = '/input.scad';

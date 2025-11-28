@@ -11,6 +11,16 @@ export interface STLExportResult {
 }
 
 /**
+ * Imported file info
+ */
+export interface ImportedFile {
+  name: string;
+  size: number;
+  type: string;
+  timestamp: number;
+}
+
+/**
  * OpenSCAD Engine Interface
  * Abstract the rendering backend
  */
@@ -21,6 +31,11 @@ export interface IOpenSCADEngine {
   analyze(code: string): ScadAnalysis;
   isReady(): boolean;
   cancel(): void;
+  // File import methods
+  importFiles(files: File[]): Promise<ImportedFile[]>;
+  removeFile(filename: string): Promise<void>;
+  clearImportedFiles(): Promise<void>;
+  getImportedFiles(): ImportedFile[];
 }
 
 /**
@@ -119,6 +134,7 @@ export class WASMOpenSCADEngine implements IOpenSCADEngine {
   private currentStderr: string[] = [];
   private compilationId = 0;
   private systemMessageCallback: ((type: 'error' | 'warning' | 'info', content: string) => void) | null = null;
+  private importedFiles: ImportedFile[] = [];
   
   // Set callback for system messages
   setSystemMessageCallback(callback: (type: 'error' | 'warning' | 'info', content: string) => void) {
@@ -384,6 +400,154 @@ export class WASMOpenSCADEngine implements IOpenSCADEngine {
       this.worker.terminate();
       this.worker = null;
       this.ready = false;
+    }
+  }
+  
+  /**
+   * Import files (STL, etc.) to be available in OpenSCAD
+   * Files are sent to the worker and cached for all future compilations
+   */
+  async importFiles(files: File[]): Promise<ImportedFile[]> {
+    if (!this.ready || !this.worker) {
+      throw new Error('Engine not initialized');
+    }
+    
+    const importedFiles: ImportedFile[] = [];
+    const fileDataArray: { name: string; data: ArrayBuffer }[] = [];
+    
+    for (const file of files) {
+      const arrayBuffer = await file.arrayBuffer();
+      fileDataArray.push({
+        name: file.name,
+        data: arrayBuffer,
+      });
+      
+      const importedFile: ImportedFile = {
+        name: file.name,
+        size: file.size,
+        type: file.type || this.getFileType(file.name),
+        timestamp: Date.now(),
+      };
+      importedFiles.push(importedFile);
+      
+      // Track locally
+      const existingIndex = this.importedFiles.findIndex(f => f.name === file.name);
+      if (existingIndex >= 0) {
+        this.importedFiles[existingIndex] = importedFile;
+      } else {
+        this.importedFiles.push(importedFile);
+      }
+    }
+    
+    // Send to worker
+    return new Promise((resolve, reject) => {
+      const handler = (e: MessageEvent) => {
+        if (e.data.type === 'import-complete') {
+          this.worker?.removeEventListener('message', handler);
+          console.log(`[OpenSCAD Engine] Imported ${e.data.count} files`);
+          resolve(importedFiles);
+        }
+      };
+      
+      this.worker!.addEventListener('message', handler);
+      this.worker!.postMessage({
+        type: 'import',
+        files: fileDataArray,
+      });
+      
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        this.worker?.removeEventListener('message', handler);
+        reject(new Error('File import timed out'));
+      }, 10000);
+    });
+  }
+  
+  /**
+   * Remove a file from the worker's cache
+   */
+  async removeFile(filename: string): Promise<void> {
+    if (!this.ready || !this.worker) {
+      throw new Error('Engine not initialized');
+    }
+    
+    // Remove from local tracking
+    this.importedFiles = this.importedFiles.filter(f => f.name !== filename);
+    
+    return new Promise((resolve, reject) => {
+      const handler = (e: MessageEvent) => {
+        if (e.data.type === 'remove-complete') {
+          this.worker?.removeEventListener('message', handler);
+          resolve();
+        }
+      };
+      
+      this.worker!.addEventListener('message', handler);
+      this.worker!.postMessage({
+        type: 'remove-file',
+        filename,
+      });
+      
+      setTimeout(() => {
+        this.worker?.removeEventListener('message', handler);
+        reject(new Error('File remove timed out'));
+      }, 5000);
+    });
+  }
+  
+  /**
+   * Clear all imported files from the worker's cache
+   */
+  async clearImportedFiles(): Promise<void> {
+    if (!this.ready || !this.worker) {
+      throw new Error('Engine not initialized');
+    }
+    
+    // Clear local tracking
+    this.importedFiles = [];
+    
+    return new Promise((resolve, reject) => {
+      const handler = (e: MessageEvent) => {
+        if (e.data.type === 'clear-complete') {
+          this.worker?.removeEventListener('message', handler);
+          resolve();
+        }
+      };
+      
+      this.worker!.addEventListener('message', handler);
+      this.worker!.postMessage({
+        type: 'clear-files',
+      });
+      
+      setTimeout(() => {
+        this.worker?.removeEventListener('message', handler);
+        reject(new Error('Clear files timed out'));
+      }, 5000);
+    });
+  }
+  
+  /**
+   * Get list of currently imported files
+   */
+  getImportedFiles(): ImportedFile[] {
+    return [...this.importedFiles];
+  }
+  
+  /**
+   * Get file type from extension
+   */
+  private getFileType(filename: string): string {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'stl': return 'model/stl';
+      case 'off': return 'model/off';
+      case 'obj': return 'model/obj';
+      case 'dxf': return 'image/vnd.dxf';
+      case 'svg': return 'image/svg+xml';
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      default: return 'application/octet-stream';
     }
   }
 }
