@@ -2882,6 +2882,91 @@ body {
   margin-bottom: 6px;
 }
 
+/* API Keys Section in Settings */
+.api-keys-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.api-keys-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.api-key-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg-light);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.api-key-field.current {
+  background: rgba(0, 217, 255, 0.05);
+  border-color: var(--accent-primary);
+}
+
+.api-key-field label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.api-key-field.current label {
+  color: var(--text-normal);
+}
+
+.current-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  background: var(--accent-primary);
+  color: var(--bg-dark);
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.api-key-field input {
+  padding: 6px 10px;
+  background: var(--bg-medium);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-normal);
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.api-key-field input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  background: var(--bg-dark);
+}
+
+.api-key-field input::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.api-keys-hint {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(0, 217, 255, 0.05);
+  border-left: 2px solid var(--accent-primary);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
 /* ============================================
    SCROLLBARS
    ============================================ */

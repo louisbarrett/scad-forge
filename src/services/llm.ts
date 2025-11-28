@@ -3,10 +3,20 @@
 
 import type { LLMConfig, ChatMessage } from '../types';
 
+// Provider base URLs
+export const PROVIDER_URLS: Record<string, string> = {
+  ollama: 'http://localhost:11434/v1',
+  openai: 'https://api.openai.com/v1',
+  together: 'https://api.together.xyz/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  xai: 'https://api.x.ai/v1',
+};
+
 // Default configuration for Ollama with dual models
 export const DEFAULT_LLM_CONFIG: LLMConfig = {
   provider: 'ollama',
   baseUrl: 'http://localhost:11434/v1',
+  providerApiKeys: {},
   model: 'llama3.2-vision', // Legacy fallback
   planningModel: 'qwen2.5-coder:14b', // For code generation
   visionModel: 'llama3.2-vision', // For image analysis
@@ -15,6 +25,32 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
   autoApply: false,
   autoRender: true,
 };
+
+// Helper to get the API key for the current provider/baseUrl
+export function getApiKeyForProvider(config: LLMConfig): string | undefined {
+  // Check per-provider keys first
+  const { providerApiKeys, baseUrl, apiKey } = config;
+  
+  if (baseUrl.includes('api.openai.com')) {
+    return providerApiKeys.openai || apiKey;
+  }
+  if (baseUrl.includes('api.together.xyz')) {
+    return providerApiKeys.together || apiKey;
+  }
+  if (baseUrl.includes('api.groq.com')) {
+    return providerApiKeys.groq || apiKey;
+  }
+  if (baseUrl.includes('api.x.ai')) {
+    return providerApiKeys.xai || apiKey;
+  }
+  // For custom or unknown providers, use the custom key or legacy apiKey
+  if (!baseUrl.includes('localhost')) {
+    return providerApiKeys.custom || apiKey;
+  }
+  
+  // Local providers (Ollama) typically don't need a key
+  return undefined;
+}
 
 // System prompt for OpenSCAD code generation - CODE ONLY, no explanations
 const PLANNING_SYSTEM_PROMPT = `You are an expert OpenSCAD code generator. Your task is to generate or modify OpenSCAD code using Constructive Solid Geometry (CSG) operations.
@@ -462,8 +498,9 @@ Analyze the image and describe what modifications are needed to achieve the user
       'Content-Type': 'application/json',
     };
 
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    const apiKey = getApiKeyForProvider(this.config);
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
     try {
@@ -524,8 +561,9 @@ Generate the complete modified OpenSCAD code that implements the requested chang
       'Content-Type': 'application/json',
     };
 
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    const apiKeyPlanning = getApiKeyForProvider(this.config);
+    if (apiKeyPlanning) {
+      headers['Authorization'] = `Bearer ${apiKeyPlanning}`;
     }
 
     try {
@@ -600,8 +638,9 @@ Generate the complete modified OpenSCAD code that implements the requested chang
       'Content-Type': 'application/json',
     };
 
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    const apiKeyVisionMutation = getApiKeyForProvider(this.config);
+    if (apiKeyVisionMutation) {
+      headers['Authorization'] = `Bearer ${apiKeyVisionMutation}`;
     }
 
     try {
@@ -739,8 +778,9 @@ Based on the visual analysis and user request, generate the complete modified Op
           'Content-Type': 'application/json',
         };
 
-        if (this.config.apiKey) {
-          headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+        const apiKeyStreamChat1 = getApiKeyForProvider(this.config);
+        if (apiKeyStreamChat1) {
+          headers['Authorization'] = `Bearer ${apiKeyStreamChat1}`;
         }
 
         try {
@@ -811,8 +851,9 @@ Based on the visual analysis and user request, generate the complete modified Op
       'Content-Type': 'application/json',
     };
 
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    const apiKeyStreamChat2 = getApiKeyForProvider(this.config);
+    if (apiKeyStreamChat2) {
+      headers['Authorization'] = `Bearer ${apiKeyStreamChat2}`;
     }
 
     try {
@@ -892,8 +933,9 @@ Based on the visual analysis and user request, generate the complete modified Op
       'Content-Type': 'application/json',
     };
 
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    const apiKeyChat = getApiKeyForProvider(this.config);
+    if (apiKeyChat) {
+      headers['Authorization'] = `Bearer ${apiKeyChat}`;
     }
 
     try {
@@ -957,8 +999,9 @@ Please analyze the error and provide the complete fixed code.`
       'Content-Type': 'application/json',
     };
 
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    const apiKeyAttemptFix = getApiKeyForProvider(this.config);
+    if (apiKeyAttemptFix) {
+      headers['Authorization'] = `Bearer ${apiKeyAttemptFix}`;
     }
 
     try {
@@ -1025,8 +1068,9 @@ Please analyze the error and provide the complete fixed code.`
       'Content-Type': 'application/json',
     };
 
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    const apiKeyStreamFix = getApiKeyForProvider(this.config);
+    if (apiKeyStreamFix) {
+      headers['Authorization'] = `Bearer ${apiKeyStreamFix}`;
     }
 
     try {

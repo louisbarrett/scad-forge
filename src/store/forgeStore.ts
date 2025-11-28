@@ -803,13 +803,36 @@ export const THEME_PRESETS: Record<ThemePreset, { name: string; category: 'dark'
   },
 };
 
-// Load LLM config from localStorage
+// Load LLM config from localStorage with migration support
 function loadLLMConfig(): LLMConfig {
   try {
     const stored = localStorage.getItem(STORAGE_KEYS.LLM_CONFIG);
     if (stored) {
       const parsed = JSON.parse(stored);
-      return { ...DEFAULT_LLM_CONFIG, ...parsed };
+      
+      // Migrate old single apiKey to providerApiKeys if needed
+      let providerApiKeys = parsed.providerApiKeys || {};
+      if (parsed.apiKey && !parsed.providerApiKeys) {
+        // Try to detect which provider the old apiKey was for based on baseUrl
+        const baseUrl = parsed.baseUrl || '';
+        if (baseUrl.includes('api.openai.com')) {
+          providerApiKeys = { ...providerApiKeys, openai: parsed.apiKey };
+        } else if (baseUrl.includes('api.x.ai')) {
+          providerApiKeys = { ...providerApiKeys, xai: parsed.apiKey };
+        } else if (baseUrl.includes('api.together.xyz')) {
+          providerApiKeys = { ...providerApiKeys, together: parsed.apiKey };
+        } else if (baseUrl.includes('api.groq.com')) {
+          providerApiKeys = { ...providerApiKeys, groq: parsed.apiKey };
+        } else if (!baseUrl.includes('localhost')) {
+          providerApiKeys = { ...providerApiKeys, custom: parsed.apiKey };
+        }
+      }
+      
+      return { 
+        ...DEFAULT_LLM_CONFIG, 
+        ...parsed, 
+        providerApiKeys,
+      };
     }
   } catch (e) {
     console.warn('Failed to load LLM config from localStorage:', e);
@@ -903,50 +926,13 @@ export function applyTheme(preset: ThemePreset): void {
   });
 }
 
-// Default OpenSCAD code with AZAI constants
-const DEFAULT_CODE = `// SCAD Forge - Visual OpenSCAD Editor
-// =====================================
+// Default OpenSCAD code - minimum viable starting point
+const DEFAULT_CODE = `// SCAD Forge - New Design
+// Start building your 3D model here
 
-// --- Fabrication Constants (AZAI Profile) ---
-print_max = [220, 220, 220];  // Adventurer 5M Pro
-clearance_loose = 0.4;
-clearance_press = 0.15;
-m3_clearance = 3.4;
-m3_insert_hole = 4.0;
-
-// --- Parameters ---
 $fn = 32;
-size = 30;
-wall = 3;
-corner_radius = 3;
 
-// --- Main Geometry ---
-module rounded_cube(s, r) {
-    minkowski() {
-        cube(s - 2*r, center=true);
-        sphere(r);
-    }
-}
-
-module mounting_post(h, od, id) {
-    difference() {
-        cylinder(h=h, d=od);
-        translate([0, 0, -0.1])
-            cylinder(h=h+0.2, d=id);
-    }
-}
-
-// Build the part
-difference() {
-    rounded_cube(size, corner_radius);
-    rounded_cube(size - wall*2, corner_radius);
-}
-
-// Add mounting posts
-for (xy = [[-1,-1], [1,-1], [-1,1], [1,1]]) {
-    translate([xy[0]*(size/2-6), xy[1]*(size/2-6), -size/2])
-        mounting_post(8, 6, m3_clearance);
-}
+cube(20, center=true);
 `;
 
 interface ForgeState {
@@ -954,6 +940,7 @@ interface ForgeState {
   code: string;
   savedCode: string;
   isDirty: boolean;
+  lastUserEdit: number; // Timestamp of last user edit - prevents async overwrites
   
   // History
   history: CodePatch[];
@@ -1060,6 +1047,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   code: loadCode(),
   savedCode: DEFAULT_CODE,
   isDirty: false,
+  lastUserEdit: 0,
   
   history: [],
   historyIndex: -1,
@@ -1113,12 +1101,15 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   
   // Actions
   setCode: (code) => {
-    // Debounced save to localStorage happens via pushPatch
-    // Only persist immediately if it's a significant change
+    // Track when user last edited - helps prevent overwrites from async operations
+    const now = Date.now();
     set((state) => ({
       code,
       isDirty: code !== state.savedCode,
+      lastUserEdit: now,
     }));
+    // Also persist to localStorage to prevent loss on re-render
+    persistCode(code);
   },
   
   saveCode: () => set((state) => ({

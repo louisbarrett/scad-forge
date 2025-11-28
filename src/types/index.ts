@@ -33,10 +33,26 @@ export interface ThemeColors {
   accentError: string;
 }
 
-// LLM Configuration - Multi-model support
+// LLM Provider types
+export type LLMProvider = 'ollama' | 'openai' | 'together' | 'groq' | 'xai' | 'custom';
+
+// Per-provider API keys
+export interface ProviderApiKeys {
+  openai?: string;
+  together?: string;
+  groq?: string;
+  xai?: string;
+  custom?: string;
+  // Ollama typically doesn't need an API key for local usage
+}
+
+// LLM Configuration - Multi-model support with per-provider API keys
 export interface LLMConfig {
-  provider: 'ollama' | 'openai' | 'custom';
+  provider: LLMProvider;
   baseUrl: string;
+  // Per-provider API keys
+  providerApiKeys: ProviderApiKeys;
+  // Legacy single apiKey (for backward compatibility, will be migrated)
   apiKey?: string;
   // Planning/coding model for generating OpenSCAD code
   planningModel: string;

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useForgeStore } from '../store/forgeStore';
-import { getLLMService, extractCodeFromResponse } from '../services/llm';
-import type { ChatMessage, LLMConfig } from '../types';
+import { getLLMService, extractCodeFromResponse, getApiKeyForProvider, PROVIDER_URLS } from '../services/llm';
+import type { ChatMessage, LLMConfig, LLMProvider } from '../types';
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -162,12 +162,74 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
+// Provider presets with their info
+const PROVIDER_PRESETS: Array<{
+  id: LLMProvider;
+  name: string;
+  baseUrl: string;
+  defaultModel: string;
+  requiresKey: boolean;
+  keyPlaceholder: string;
+  fallbackModels?: string[]; // Known models if /models endpoint fails
+}> = [
+  { id: 'ollama', name: 'Ollama', baseUrl: PROVIDER_URLS.ollama, defaultModel: '', requiresKey: false, keyPlaceholder: '(optional for local)' },
+  { id: 'openai', name: 'OpenAI', baseUrl: PROVIDER_URLS.openai, defaultModel: 'gpt-4o', requiresKey: true, keyPlaceholder: 'sk-...', 
+    fallbackModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo', 'o1-preview', 'o1-mini'] },
+  { id: 'xai', name: 'X.AI (Grok)', baseUrl: PROVIDER_URLS.xai, defaultModel: 'grok-2-vision-1212', requiresKey: true, keyPlaceholder: 'xai-...',
+    fallbackModels: ['grok-2-vision-1212', 'grok-2-1212', 'grok-beta', 'grok-vision-beta'] },
+  { id: 'together', name: 'Together', baseUrl: PROVIDER_URLS.together, defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', requiresKey: true, keyPlaceholder: '',
+    fallbackModels: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'meta-llama/Llama-Vision-Free', 'Qwen/Qwen2.5-Coder-32B-Instruct', 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B'] },
+  { id: 'groq', name: 'Groq', baseUrl: PROVIDER_URLS.groq, defaultModel: 'llama-3.3-70b-versatile', requiresKey: true, keyPlaceholder: 'gsk_...',
+    fallbackModels: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'] },
+];
+
+// Helper to detect provider from baseUrl
+function detectProviderFromUrl(baseUrl: string): LLMProvider {
+  if (baseUrl.includes('api.openai.com')) return 'openai';
+  if (baseUrl.includes('api.x.ai')) return 'xai';
+  if (baseUrl.includes('api.together.xyz')) return 'together';
+  if (baseUrl.includes('api.groq.com')) return 'groq';
+  if (baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1')) return 'ollama';
+  return 'custom';
+}
+
 function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
-  const [localConfig, setLocalConfig] = useState(config);
+  const [localConfig, setLocalConfig] = useState(() => ({
+    ...config,
+    providerApiKeys: config.providerApiKeys || {},
+  }));
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   
+  // Detect current provider from baseUrl
+  const currentProvider = detectProviderFromUrl(localConfig.baseUrl);
+  
+  // Get API key for current provider
+  const getCurrentApiKey = useCallback(() => {
+    return getApiKeyForProvider(localConfig);
+  }, [localConfig]);
+  
+  // Update API key for a specific provider
+  const updateProviderApiKey = useCallback((provider: LLMProvider, key: string) => {
+    setLocalConfig(prev => ({
+      ...prev,
+      providerApiKeys: {
+        ...prev.providerApiKeys,
+        [provider]: key || undefined,
+      },
+    }));
+  }, []);
+  
+  // Get fallback models for the current provider
+  const getFallbackModels = useCallback((baseUrl: string): ModelInfo[] => {
+    const provider = PROVIDER_PRESETS.find(p => baseUrl.includes(new URL(p.baseUrl).hostname));
+    if (provider?.fallbackModels) {
+      return provider.fallbackModels.map(id => ({ id, name: id }));
+    }
+    return [];
+  }, []);
+
   // Fetch models when baseUrl changes
   const fetchModels = useCallback(async (baseUrl: string, apiKey?: string) => {
     setModelsLoading(true);
@@ -175,14 +237,16 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
     setAvailableModels([]);
     
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
+      // Don't send Content-Type for GET requests - some APIs reject it
+      const headers: Record<string, string> = {};
       if (apiKey) {
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
       
-      const response = await fetch(`${baseUrl}/models`, { headers });
+      const response = await fetch(`${baseUrl}/models`, { 
+        method: 'GET',
+        headers,
+      });
       
       if (!response.ok) {
         throw new Error(`Failed to fetch models: ${response.status}`);
@@ -216,15 +280,23 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
       setAvailableModels(models);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Failed to fetch models';
-      setModelsError(msg);
+      
+      // Try to use fallback models for known providers
+      const fallbacks = getFallbackModels(baseUrl);
+      if (fallbacks.length > 0) {
+        setAvailableModels(fallbacks);
+        setModelsError(`Using known models (API returned: ${msg})`);
+      } else {
+        setModelsError(msg);
+      }
     } finally {
       setModelsLoading(false);
     }
-  }, []);
+  }, [getFallbackModels]);
   
   // Fetch models on mount
   useEffect(() => {
-    fetchModels(localConfig.baseUrl, localConfig.apiKey);
+    fetchModels(localConfig.baseUrl, getCurrentApiKey());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount - URL changes trigger fetchModels via onBlur
   
@@ -234,7 +306,7 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
   };
   
   const handleRefreshModels = () => {
-    fetchModels(localConfig.baseUrl, localConfig.apiKey);
+    fetchModels(localConfig.baseUrl, getCurrentApiKey());
   };
   
   const handleUrlChange = (newUrl: string) => {
@@ -242,15 +314,20 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
   };
   
   const handleUrlBlur = () => {
-    fetchModels(localConfig.baseUrl, localConfig.apiKey);
+    fetchModels(localConfig.baseUrl, getCurrentApiKey());
   };
   
-  const presets = [
-    { name: 'Ollama', baseUrl: 'http://localhost:11434/v1', model: '' },
-    { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o' },
-    { name: 'Together', baseUrl: 'https://api.together.xyz/v1', model: '' },
-    { name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: '' },
-  ];
+  const handleProviderSelect = (preset: typeof PROVIDER_PRESETS[0]) => {
+    setLocalConfig(prev => ({ 
+      ...prev, 
+      baseUrl: preset.baseUrl, 
+      provider: preset.id,
+      model: preset.defaultModel || prev.model,
+    }));
+    // Fetch models with the appropriate API key for the new provider
+    const apiKey = localConfig.providerApiKeys[preset.id as keyof typeof localConfig.providerApiKeys];
+    fetchModels(preset.baseUrl, apiKey);
+  };
   
   // Helper to render model selector
   const renderModelSelector = (
@@ -302,14 +379,11 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
           <div className="settings-presets">
             <label>Provider</label>
             <div className="preset-buttons">
-              {presets.map((preset) => (
+              {PROVIDER_PRESETS.map((preset) => (
                 <button
-                  key={preset.name}
-                  className={`preset-btn ${localConfig.baseUrl === preset.baseUrl ? 'active' : ''}`}
-                  onClick={() => {
-                    setLocalConfig({ ...localConfig, baseUrl: preset.baseUrl, model: preset.model || localConfig.model });
-                    fetchModels(preset.baseUrl, localConfig.apiKey);
-                  }}
+                  key={preset.id}
+                  className={`preset-btn ${currentProvider === preset.id ? 'active' : ''}`}
+                  onClick={() => handleProviderSelect(preset)}
                 >
                   {preset.name}
                 </button>
@@ -328,15 +402,40 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
             />
           </div>
           
-          <div className="settings-field">
-            <label>API Key {localConfig.baseUrl.includes('localhost') && <span className="label-hint">(optional for local)</span>}</label>
-            <input
-              type="password"
-              value={localConfig.apiKey || ''}
-              onChange={(e) => setLocalConfig({ ...localConfig, apiKey: e.target.value || undefined })}
-              onBlur={handleUrlBlur}
-              placeholder="sk-..."
-            />
+          {/* Per-Provider API Keys Section */}
+          <div className="settings-section api-keys-section">
+            <label className="section-label">API Keys</label>
+            <div className="api-keys-grid">
+              {PROVIDER_PRESETS.filter(p => p.requiresKey).map((preset) => {
+                const isCurrentProvider = currentProvider === preset.id;
+                const keyValue = localConfig.providerApiKeys[preset.id as keyof typeof localConfig.providerApiKeys] || '';
+                return (
+                  <div 
+                    key={preset.id} 
+                    className={`api-key-field ${isCurrentProvider ? 'current' : ''}`}
+                  >
+                    <label>
+                      {preset.name}
+                      {isCurrentProvider && <span className="current-badge">Active</span>}
+                    </label>
+                    <input
+                      type="password"
+                      value={keyValue}
+                      onChange={(e) => updateProviderApiKey(preset.id, e.target.value)}
+                      onBlur={() => {
+                        if (isCurrentProvider) {
+                          fetchModels(localConfig.baseUrl, keyValue || undefined);
+                        }
+                      }}
+                      placeholder={preset.keyPlaceholder}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="api-keys-hint">
+              API keys are stored locally in your browser and sent directly to the provider.
+            </div>
           </div>
           
           <div className="settings-field model-field">
@@ -531,6 +630,9 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapt
   const handleSend = useCallback(async () => {
     if (!input.trim() || isChatStreaming || isCapturing) return;
     
+    // Capture start time to check if user edits during LLM generation
+    const startTime = Date.now();
+    
     let imageDataUrl: string | undefined;
     
     // Auto-capture if includeImage is enabled
@@ -607,10 +709,15 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapt
       
       updateChatMessage(assistantMsgId, { status: 'complete' });
       
-      // Auto-apply if enabled
+      // Auto-apply if enabled - but check if user edited during generation
       if (llmConfig.autoApply) {
-        const finalMessage = useForgeStore.getState().chatMessages.find(m => m.id === assistantMsgId);
-        if (finalMessage) {
+        const currentState = useForgeStore.getState();
+        const finalMessage = currentState.chatMessages.find(m => m.id === assistantMsgId);
+        
+        // Check if user edited code during LLM generation
+        const userEditedDuringGeneration = currentState.lastUserEdit > startTime;
+        
+        if (finalMessage && !userEditedDuringGeneration) {
           const extractedCode = extractCodeFromResponse(finalMessage.content);
           if (extractedCode) {
             // Apply the code

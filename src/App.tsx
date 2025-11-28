@@ -164,7 +164,6 @@ function App() {
     pushPatch,
     undo,
     redo,
-    setCode,
     startAutoFix,
     endAutoFix,
     resetAutoFixAttempts,
@@ -222,6 +221,10 @@ function App() {
       return false;
     }
     
+    // Capture the timestamp when we start - we'll check if user edited during the fix
+    const startTime = Date.now();
+    const originalCode = state.code;
+    
     startAutoFix();
     
     // Add a system message to chat showing auto-fix is in progress
@@ -236,17 +239,29 @@ function App() {
       
       // Stream the fix attempt
       let fullResponse = '';
-      for await (const chunk of llmService.streamAttemptFix(state.code, errorMessage)) {
+      for await (const chunk of llmService.streamAttemptFix(originalCode, errorMessage)) {
         fullResponse += chunk;
       }
       
       // Extract the fixed code
       const fixedCode = extractCodeFromResponse(fullResponse);
       
-      if (fixedCode && fixedCode !== state.code) {
+      // Check if user has edited code since we started the fix
+      const currentState = useForgeStore.getState();
+      if (currentState.lastUserEdit > startTime) {
+        // User edited while we were fixing - don't overwrite their changes
+        addChatMessage({
+          role: 'assistant',
+          content: `⚠️ Auto-fix generated but not applied - you edited the code while fix was in progress.\n\nSuggested fix:\n\`\`\`openscad\n${fixedCode?.slice(0, 500)}...\n\`\`\``,
+        });
+        endAutoFix(false, 'User edited code during fix');
+        return false;
+      }
+      
+      if (fixedCode && fixedCode !== originalCode) {
         // Apply the fix
-        setCode(fixedCode);
-        pushPatch(`Auto-fix: ${errorMessage.slice(0, 50)}...`, fixedCode, 'llm');
+        useForgeStore.getState().setCode(fixedCode);
+        useForgeStore.getState().pushPatch(`Auto-fix: ${errorMessage.slice(0, 50)}...`, fixedCode, 'llm');
         
         // Add success message to chat
         addChatMessage({
@@ -277,7 +292,7 @@ function App() {
       endAutoFix(false, errorMsg);
       return false;
     }
-  }, [startAutoFix, endAutoFix, setCode, pushPatch, addChatMessage]);
+  }, [startAutoFix, endAutoFix, addChatMessage]);
   
   // Compile handler
   const handleCompile = useCallback(async (skipAutoFix = false) => {
