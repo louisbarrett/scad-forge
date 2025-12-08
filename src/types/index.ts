@@ -34,11 +34,12 @@ export interface ThemeColors {
 }
 
 // LLM Provider types
-export type LLMProvider = 'ollama' | 'openai' | 'together' | 'groq' | 'xai' | 'custom';
+export type LLMProvider = 'ollama' | 'openai' | 'anthropic' | 'together' | 'groq' | 'xai' | 'custom';
 
 // Per-provider API keys
 export interface ProviderApiKeys {
   openai?: string;
+  anthropic?: string;
   together?: string;
   groq?: string;
   xai?: string;

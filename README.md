@@ -65,6 +65,7 @@ A visual OpenSCAD editor built for the AI-assisted design workflow. Edit code, p
 - **OpenAI-compatible API** - Works with multiple providers:
   - Ollama (default) - Local, free, private
   - OpenAI - GPT-4o, GPT-4, GPT-3.5-turbo
+  - Anthropic (Claude) - Claude 3.5 Sonnet, Opus, Haiku
   - Together AI - Llama, Qwen, DeepSeek models
   - Groq - Fast inference with Llama, Mixtral, Gemma
   - X.AI (Grok) - Grok-2 vision models
@@ -231,15 +232,18 @@ Click the ⚙️ button in the Chat panel to configure:
 |----------|----------|-------|---------------------|
 | Ollama (Local) | `http://localhost:11434/v1` | Free, private, no API key | `qwen2.5-coder:14b` (planning), `llama3.2-vision` (vision)<br/>**Recommended:** `gpt-oss:120b` (planning) + `qwen3-vl` (vision) |
 | OpenAI | `https://api.openai.com/v1` | Requires API key | `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo` |
+| Anthropic (Claude) | `https://api.anthropic.com/v1` | Requires API key<br/>**Note:** CORS enabled automatically | `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229`, `claude-3-5-haiku-20241022` |
 | Together AI | `https://api.together.xyz/v1` | Requires API key | `meta-llama/Llama-3.3-70B-Instruct-Turbo`, `Qwen/Qwen2.5-Coder-32B-Instruct` |
 | Groq | `https://api.groq.com/openai/v1` | Requires API key | `llama-3.3-70b-versatile`, `mixtral-8x7b-32768` |
 | X.AI (Grok) | `https://api.x.ai/v1` | Requires API key | `grok-2-vision-1212`, `grok-2-1212` |
 | Custom | Any OpenAI-compatible endpoint | Configure as needed | Varies by provider |
 
 **Dual-Model Setup:**
-- **Planning Model**: Used for code generation (e.g., `qwen2.5-coder:14b`, `gpt-4o`)
-- **Vision Model**: Used for image analysis (e.g., `llama3.2-vision`, `grok-2-vision-1212`)
-- Both models can be the same if your provider supports vision in a single model
+- **Planning Model**: Used for code generation (e.g., `qwen2.5-coder:14b`, `gpt-4o`, `claude-3-5-sonnet-20241022`)
+- **Vision Model**: Used for image analysis (e.g., `llama3.2-vision`, `grok-2-vision-1212`, `claude-3-5-sonnet-20241022`)
+- Both models can be the same if your provider supports vision in a single model (Claude models support vision natively)
+
+**Note on Claude API:** Anthropic's Claude API uses a slightly different authentication format. When configuring Claude as a custom endpoint, you may need to use an OpenAI-compatible proxy or ensure your API key is properly configured in the custom provider settings.
 
 ## AZAI Fabrication Profile
 

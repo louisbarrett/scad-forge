@@ -7,6 +7,7 @@ import type { LLMConfig, ChatMessage } from '../types';
 export const PROVIDER_URLS: Record<string, string> = {
   ollama: 'http://localhost:11434/v1',
   openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
   together: 'https://api.together.xyz/v1',
   groq: 'https://api.groq.com/openai/v1',
   xai: 'https://api.x.ai/v1',
@@ -26,6 +27,11 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
   autoRender: true,
 };
 
+// Helper to check if provider is Anthropic
+export function isAnthropicProvider(baseUrl: string): boolean {
+  return baseUrl.includes('api.anthropic.com');
+}
+
 // Helper to get the API key for the current provider/baseUrl
 export function getApiKeyForProvider(config: LLMConfig): string | undefined {
   // Check per-provider keys first
@@ -33,6 +39,9 @@ export function getApiKeyForProvider(config: LLMConfig): string | undefined {
   
   if (baseUrl.includes('api.openai.com')) {
     return providerApiKeys.openai || apiKey;
+  }
+  if (baseUrl.includes('api.anthropic.com')) {
+    return providerApiKeys.anthropic || apiKey;
   }
   if (baseUrl.includes('api.together.xyz')) {
     return providerApiKeys.together || apiKey;
@@ -50,6 +59,96 @@ export function getApiKeyForProvider(config: LLMConfig): string | undefined {
   
   // Local providers (Ollama) typically don't need a key
   return undefined;
+}
+
+// Helper to build headers for API requests (handles Anthropic's different format)
+export function buildApiHeaders(config: LLMConfig): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  
+  const apiKey = getApiKeyForProvider(config);
+  const isAnthropic = isAnthropicProvider(config.baseUrl);
+  
+  if (isAnthropic) {
+    // Anthropic requires x-api-key header and anthropic-version
+    if (!apiKey) {
+      throw new Error('Anthropic API key is required. Please set your API key in the settings.');
+    }
+    headers['x-api-key'] = apiKey;
+    headers['anthropic-version'] = '2023-06-01';
+    // Required header to enable CORS for browser requests
+    headers['anthropic-dangerous-direct-browser-access'] = 'true';
+  } else if (apiKey) {
+    // Standard OpenAI-compatible format
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+  
+  return headers;
+}
+
+// Helper to convert OpenAI-format messages to Anthropic format
+function convertMessagesForAnthropic(messages: ChatCompletionMessage[]): Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; source?: { type: string; data: string; media_type: string } }> }> {
+  const converted: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; source?: { type: string; data: string; media_type: string } }> }> = [];
+  
+  for (const msg of messages) {
+    // Skip system messages (they're handled separately as 'system' parameter)
+    if (msg.role === 'system') continue;
+    
+    if (typeof msg.content === 'string') {
+      // Skip empty string content (except for final assistant message which we'll handle)
+      if (msg.content.trim().length === 0) {
+        // Only skip if it's not the last message (Anthropic allows empty final assistant message)
+        continue;
+      }
+      converted.push({ 
+        role: msg.role === 'user' ? 'user' : 'assistant', 
+        content: msg.content 
+      });
+    } else {
+      // Handle multimodal content
+      const content: Array<{ type: string; text?: string; source?: { type: string; data: string; media_type: string } }> = [];
+      for (const item of msg.content) {
+        if (item.type === 'text' && item.text && item.text.trim().length > 0) {
+          content.push({ type: 'text', text: item.text });
+        } else if (item.type === 'image_url' && item.image_url?.url) {
+          // Anthropic uses base64 data URIs directly
+          const imageUrl = item.image_url.url;
+          if (imageUrl.startsWith('data:')) {
+            const [mimeType, base64Data] = imageUrl.split(',');
+            const mimeMatch = mimeType.match(/data:([^;]+)/);
+            if (base64Data && base64Data.length > 0) {
+              content.push({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  data: base64Data,
+                  media_type: mimeMatch ? mimeMatch[1] : 'image/png',
+                },
+              });
+            }
+          }
+        }
+      }
+      
+      // Only add message if it has non-empty content
+      // Anthropic allows empty content only for the final assistant message
+      if (content.length > 0) {
+        converted.push({ 
+          role: msg.role === 'user' ? 'user' : 'assistant', 
+          content 
+        });
+      }
+    }
+  }
+  
+  return converted;
+}
+
+// Helper to get system message from OpenAI format (Anthropic needs it in first user message)
+function getSystemMessage(messages: ChatCompletionMessage[]): string {
+  const systemMsg = messages.find(msg => msg.role === 'system');
+  return systemMsg && typeof systemMsg.content === 'string' ? systemMsg.content : '';
 }
 
 // System prompt for OpenSCAD code generation - CODE ONLY, no explanations
@@ -462,18 +561,45 @@ export class LLMService {
   ): Promise<string> {
     this.abortController = new AbortController();
 
-    const messages: ChatCompletionMessage[] = [
-      { role: 'system', content: VISION_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: { url: imageDataUrl },
+    const isAnthropic = isAnthropicProvider(this.config.baseUrl);
+    
+    // Validate API key for Anthropic
+    if (isAnthropic) {
+      const apiKey = getApiKeyForProvider(this.config);
+      if (!apiKey) {
+        throw new Error('Anthropic API key is required. Please configure your API key in the Chat settings (⚙️ button).');
+      }
+    }
+    
+    const headers = buildApiHeaders(this.config);
+    const model = this.getModelForTask('vision');
+    
+    let requestBody: any;
+    let endpoint: string;
+
+    if (isAnthropic) {
+      // Anthropic format
+      const systemMessage = VISION_SYSTEM_PROMPT;
+      const userContent: Array<{ type: string; text?: string; source?: { type: string; data: string; media_type: string } }> = [];
+      
+      // Add image
+      if (imageDataUrl.startsWith('data:')) {
+        const [mimeType, base64Data] = imageDataUrl.split(',');
+        const mimeMatch = mimeType.match(/data:([^;]+)/);
+        userContent.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            data: base64Data,
+            media_type: mimeMatch ? mimeMatch[1] : 'image/png',
           },
-          {
-            type: 'text',
-            text: `Current OpenSCAD code:
+        });
+      }
+      
+      // Add text
+      userContent.push({
+        type: 'text',
+        text: `Current OpenSCAD code:
 \`\`\`openscad
 ${currentCode}
 \`\`\`
@@ -481,30 +607,66 @@ ${currentCode}
 User request: ${userPrompt}
 
 Analyze the image and describe what modifications are needed to achieve the user's request. Be specific about OpenSCAD operations.`,
-          },
-        ],
-      },
-    ];
+      });
 
-    const requestBody: ChatCompletionRequest = {
-      model: this.getModelForTask('vision'),
-      messages,
-      temperature: this.config.temperature,
-      max_tokens: this.config.maxTokens,
-      stream: false,
-    };
+      requestBody = {
+        model,
+        max_tokens: this.config.maxTokens,
+        temperature: this.config.temperature,
+        system: systemMessage,
+        messages: [{ role: 'user', content: userContent }],
+      };
+      // Ensure baseUrl doesn't have trailing slash
+      const baseUrl = this.config.baseUrl.replace(/\/$/, '');
+      endpoint = `${baseUrl}/messages`;
+    } else {
+      // OpenAI-compatible format
+      const messages: ChatCompletionMessage[] = [
+        { role: 'system', content: VISION_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: imageDataUrl },
+            },
+            {
+              type: 'text',
+              text: `Current OpenSCAD code:
+\`\`\`openscad
+${currentCode}
+\`\`\`
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
+User request: ${userPrompt}
 
-    const apiKey = getApiKeyForProvider(this.config);
-    if (apiKey) {
-      headers['Authorization'] = `Bearer ${apiKey}`;
+Analyze the image and describe what modifications are needed to achieve the user's request. Be specific about OpenSCAD operations.`,
+            },
+          ],
+        },
+      ];
+
+      requestBody = {
+        model,
+        messages,
+        temperature: this.config.temperature,
+        max_tokens: this.config.maxTokens,
+        stream: false,
+      };
+      endpoint = `${this.config.baseUrl}/chat/completions`;
     }
 
     try {
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+      // Validate Anthropic request format
+      if (isAnthropic) {
+        if (!requestBody.system) {
+          console.warn('[Anthropic] Request missing system parameter');
+        }
+        if (!Array.isArray(requestBody.messages) || requestBody.messages.length === 0) {
+          throw new Error('Anthropic API requires at least one message in the messages array');
+        }
+      }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
@@ -513,11 +675,42 @@ Analyze the image and describe what modifications are needed to achieve the user
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Vision API error: ${response.status} - ${errorText}`);
+        let errorMessage = `Vision API error (${response.status}): ${errorText}`;
+        
+        if (response.status === 401) {
+          errorMessage = `Authentication failed. Please check your Anthropic API key is correct and starts with 'sk-ant-'.`;
+        } else if (response.status === 403) {
+          errorMessage = `Access forbidden. Check your API key permissions and account status.`;
+        } else if (response.status === 400) {
+          errorMessage = `Bad request: ${errorText}. Check your request format matches the Anthropic API specification.`;
+        }
+        
+        throw new Error(errorMessage);
       }
 
-      const data = (await response.json()) as ChatCompletionResponse;
-      return data.choices[0]?.message?.content || '';
+      const data = await response.json();
+      
+      if (isAnthropic) {
+        // Anthropic response format: { content: [{ type: 'text', text: '...' }] }
+        if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
+          console.warn('[Anthropic] Unexpected response format:', data);
+          return '';
+        }
+        return data.content[0]?.text || '';
+      } else {
+        // OpenAI response format
+        const openAiData = data as ChatCompletionResponse;
+        return openAiData.choices[0]?.message?.content || '';
+      }
+    } catch (error) {
+      // Handle network errors (CORS, connection failures, etc.)
+      if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
+        const apiKey = getApiKeyForProvider(this.config);
+        const hasKey = !!apiKey;
+        const keyHint = isAnthropic && hasKey ? ' (should start with sk-ant-)' : '';
+        throw new Error(`Network error: Failed to connect to ${endpoint}. ${hasKey ? `Check your API key format${keyHint} and network connection.` : 'API key is missing. Please configure your API key in settings.'} If this persists, check CORS settings and firewall/proxy configuration. Original error: ${error.message}`);
+      }
+      throw error;
     } finally {
       this.abortController = null;
     }
@@ -531,11 +724,14 @@ Analyze the image and describe what modifications are needed to achieve the user
   ): Promise<string> {
     this.abortController = new AbortController();
 
-    const messages: ChatCompletionMessage[] = [
-      { role: 'system', content: PLANNING_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: `Current OpenSCAD code:
+    const isAnthropic = isAnthropicProvider(this.config.baseUrl);
+    const headers = buildApiHeaders(this.config);
+    const model = this.getModelForTask('planning');
+    
+    let requestBody: any;
+    let endpoint: string;
+
+    const userMessage = `Current OpenSCAD code:
 \`\`\`openscad
 ${currentCode}
 \`\`\`
@@ -545,29 +741,37 @@ ${visionAnalysis}
 
 User request: ${userPrompt}
 
-Generate the complete modified OpenSCAD code that implements the requested changes.`,
-      },
-    ];
+Generate the complete modified OpenSCAD code that implements the requested changes.`;
 
-    const requestBody: ChatCompletionRequest = {
-      model: this.getModelForTask('planning'),
-      messages,
-      temperature: this.config.temperature,
-      max_tokens: this.config.maxTokens,
-      stream: false,
-    };
+    if (isAnthropic) {
+      requestBody = {
+        model,
+        max_tokens: this.config.maxTokens,
+        temperature: this.config.temperature,
+        system: PLANNING_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }],
+      };
+      // Ensure baseUrl doesn't have trailing slash
+      const baseUrl = this.config.baseUrl.replace(/\/$/, '');
+      endpoint = `${baseUrl}/messages`;
+    } else {
+      const messages: ChatCompletionMessage[] = [
+        { role: 'system', content: PLANNING_SYSTEM_PROMPT },
+        { role: 'user', content: userMessage },
+      ];
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    const apiKeyPlanning = getApiKeyForProvider(this.config);
-    if (apiKeyPlanning) {
-      headers['Authorization'] = `Bearer ${apiKeyPlanning}`;
+      requestBody = {
+        model,
+        messages,
+        temperature: this.config.temperature,
+        max_tokens: this.config.maxTokens,
+        stream: false,
+      };
+      endpoint = `${this.config.baseUrl}/chat/completions`;
     }
 
     try {
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
@@ -579,8 +783,20 @@ Generate the complete modified OpenSCAD code that implements the requested chang
         throw new Error(`Planning API error: ${response.status} - ${errorText}`);
       }
 
-      const data = (await response.json()) as ChatCompletionResponse;
-      return data.choices[0]?.message?.content || '';
+      const data = await response.json();
+      
+      if (isAnthropic) {
+        return data.content?.[0]?.text || '';
+      } else {
+        const openAiData = data as ChatCompletionResponse;
+        return openAiData.choices[0]?.message?.content || '';
+      }
+    } catch (error) {
+      // Handle network errors (CORS, connection failures, etc.)
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        throw new Error(`Network error: Failed to connect to ${endpoint}. Check your API key and network connection.`);
+      }
+      throw error;
     } finally {
       this.abortController = null;
     }
@@ -766,25 +982,44 @@ ${visionAnalysis}
 Based on the visual analysis and user request, generate the complete modified OpenSCAD code.`,
         });
 
-        const requestBody: ChatCompletionRequest = {
-          model: this.getModelForTask('planning'),
-          messages: planningMessages,
-          temperature: this.config.temperature,
-          max_tokens: this.config.maxTokens,
-          stream: true,
-        };
+        const isAnthropic = isAnthropicProvider(this.config.baseUrl);
+        const headers = buildApiHeaders(this.config);
+        const model = this.getModelForTask('planning');
+        
+        let requestBody: any;
+        let endpoint: string;
 
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        };
-
-        const apiKeyStreamChat1 = getApiKeyForProvider(this.config);
-        if (apiKeyStreamChat1) {
-          headers['Authorization'] = `Bearer ${apiKeyStreamChat1}`;
+        if (isAnthropic) {
+          // Anthropic format - combine system prompt with first user message
+          const systemPrompt = PLANNING_SYSTEM_PROMPT;
+          const userMessages = planningMessages.filter(m => m.role !== 'system');
+          const combinedUserContent = userMessages.map(m => 
+            typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+          ).join('\n\n');
+          
+          requestBody = {
+            model,
+            max_tokens: this.config.maxTokens,
+            temperature: this.config.temperature,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: combinedUserContent }],
+            stream: true,
+          };
+          const baseUrl = this.config.baseUrl.replace(/\/$/, '');
+          endpoint = `${baseUrl}/messages`;
+        } else {
+          requestBody = {
+            model,
+            messages: planningMessages,
+            temperature: this.config.temperature,
+            max_tokens: this.config.maxTokens,
+            stream: true,
+          };
+          endpoint = `${this.config.baseUrl}/chat/completions`;
         }
 
         try {
-          const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+          const response = await fetch(endpoint, {
             method: 'POST',
             headers,
             body: JSON.stringify(requestBody),
@@ -814,17 +1049,41 @@ Based on the visual analysis and user request, generate the complete modified Op
 
             for (const line of lines) {
               const trimmed = line.trim();
-              if (!trimmed || trimmed === 'data: [DONE]') continue;
-              if (!trimmed.startsWith('data: ')) continue;
-
-              try {
-                const json = JSON.parse(trimmed.slice(6)) as ChatCompletionChunk;
-                const content = json.choices[0]?.delta?.content;
-                if (content) {
-                  yield content;
+              if (!trimmed) continue;
+              
+              if (isAnthropic) {
+                // Anthropic SSE format: 
+                // event: content_block_delta
+                // data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "..."}}
+                if (trimmed.startsWith('data: ')) {
+                  try {
+                    const json = JSON.parse(trimmed.slice(6));
+                    // Handle content_block_delta events
+                    if (json.type === 'content_block_delta' && json.delta?.type === 'text_delta' && json.delta?.text) {
+                      yield json.delta.text;
+                    }
+                    // Handle direct text_delta (fallback)
+                    else if (json.type === 'text_delta' && json.text) {
+                      yield json.text;
+                    }
+                  } catch {
+                    // Skip malformed JSON
+                  }
                 }
-              } catch {
-                // Skip malformed JSON
+              } else {
+                // OpenAI SSE format
+                if (trimmed === 'data: [DONE]') continue;
+                if (!trimmed.startsWith('data: ')) continue;
+
+                try {
+                  const json = JSON.parse(trimmed.slice(6)) as ChatCompletionChunk;
+                  const content = json.choices[0]?.delta?.content;
+                  if (content) {
+                    yield content;
+                  }
+                } catch {
+                  // Skip malformed JSON
+                }
               }
             }
           }
@@ -837,27 +1096,41 @@ Based on the visual analysis and user request, generate the complete modified Op
     }
     
     // No image - use planning model directly
+    const isAnthropic = isAnthropicProvider(this.config.baseUrl);
+    const headers = buildApiHeaders(this.config);
+    const model = this.getModelForTask('planning');
     const messages = this.buildMessages(chatHistory, currentCode, undefined, PLANNING_SYSTEM_PROMPT);
+    
+    let requestBody: any;
+    let endpoint: string;
 
-    const requestBody: ChatCompletionRequest = {
-      model: this.getModelForTask('planning'),
-      messages,
-      temperature: this.config.temperature,
-      max_tokens: this.config.maxTokens,
-      stream: true,
-    };
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    const apiKeyStreamChat2 = getApiKeyForProvider(this.config);
-    if (apiKeyStreamChat2) {
-      headers['Authorization'] = `Bearer ${apiKeyStreamChat2}`;
+    if (isAnthropic) {
+      // Anthropic format
+      const systemPrompt = PLANNING_SYSTEM_PROMPT;
+      const anthropicMessages = convertMessagesForAnthropic(messages);
+      
+      requestBody = {
+        model,
+        max_tokens: this.config.maxTokens,
+        temperature: this.config.temperature,
+        system: systemPrompt,
+        messages: anthropicMessages,
+        stream: true,
+      };
+      endpoint = `${this.config.baseUrl}/messages`;
+    } else {
+      requestBody = {
+        model,
+        messages,
+        temperature: this.config.temperature,
+        max_tokens: this.config.maxTokens,
+        stream: true,
+      };
+      endpoint = `${this.config.baseUrl}/chat/completions`;
     }
 
     try {
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
@@ -887,17 +1160,38 @@ Based on the visual analysis and user request, generate the complete modified Op
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed || trimmed === 'data: [DONE]') continue;
-          if (!trimmed.startsWith('data: ')) continue;
-
-          try {
-            const json = JSON.parse(trimmed.slice(6)) as ChatCompletionChunk;
-            const content = json.choices[0]?.delta?.content;
-            if (content) {
-              yield content;
+          if (!trimmed) continue;
+          
+          if (isAnthropic) {
+            // Anthropic SSE format
+            if (trimmed.startsWith('event: ') || trimmed.startsWith('data: ')) {
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const json = JSON.parse(trimmed.slice(6));
+                  if (json.type === 'content_block_delta' && json.delta?.text) {
+                    yield json.delta.text;
+                  } else if (json.type === 'text_delta' && json.text) {
+                    yield json.text;
+                  }
+                } catch {
+                  // Skip malformed JSON
+                }
+              }
             }
-          } catch {
-            // Skip malformed JSON
+          } else {
+            // OpenAI SSE format
+            if (trimmed === 'data: [DONE]') continue;
+            if (!trimmed.startsWith('data: ')) continue;
+
+            try {
+              const json = JSON.parse(trimmed.slice(6)) as ChatCompletionChunk;
+              const content = json.choices[0]?.delta?.content;
+              if (content) {
+                yield content;
+              }
+            } catch {
+              // Skip malformed JSON
+            }
           }
         }
       }
@@ -913,33 +1207,73 @@ Based on the visual analysis and user request, generate the complete modified Op
   ): Promise<string> {
     this.abortController = new AbortController();
 
-    // If there's an image, use the vision model, otherwise use planning model
-    // But ALWAYS use a code-generation prompt so we get ```openscad blocks
+    const isAnthropic = isAnthropicProvider(this.config.baseUrl);
+    
+    // Validate API key for Anthropic before making request
+    if (isAnthropic) {
+      const apiKey = getApiKeyForProvider(this.config);
+      if (!apiKey) {
+        throw new Error('Anthropic API key is required. Please configure your API key in the Chat settings (⚙️ button).');
+      }
+      if (!apiKey.startsWith('sk-ant-')) {
+        console.warn('Anthropic API key should start with "sk-ant-". Please verify your API key.');
+      }
+    }
+    
     const hasImage = imageDataUrl || chatHistory.some(m => m.attachedImage);
     const model = hasImage ? this.getModelForTask('vision') : this.getModelForTask('planning');
     const systemPrompt = hasImage ? VISION_CHAT_PROMPT : PLANNING_SYSTEM_PROMPT;
-    
+    const headers = buildApiHeaders(this.config);
     const messages = this.buildMessages(chatHistory, currentCode, imageDataUrl, systemPrompt);
+    
+    let requestBody: any;
+    let endpoint: string;
 
-    const requestBody: ChatCompletionRequest = {
-      model,
-      messages,
-      temperature: this.config.temperature,
-      max_tokens: this.config.maxTokens,
-      stream: false,
-    };
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    const apiKeyChat = getApiKeyForProvider(this.config);
-    if (apiKeyChat) {
-      headers['Authorization'] = `Bearer ${apiKeyChat}`;
+    if (isAnthropic) {
+      const anthropicMessages = convertMessagesForAnthropic(messages);
+      requestBody = {
+        model,
+        max_tokens: this.config.maxTokens,
+        temperature: this.config.temperature,
+        system: systemPrompt,
+        messages: anthropicMessages,
+      };
+      // Ensure baseUrl doesn't have trailing slash
+      const baseUrl = this.config.baseUrl.replace(/\/$/, '');
+      endpoint = `${baseUrl}/messages`;
+      
+      // Debug logging (remove in production if needed)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Anthropic API] Request:', {
+          endpoint,
+          model,
+          hasApiKey: !!getApiKeyForProvider(this.config),
+          messageCount: anthropicMessages.length,
+        });
+      }
+    } else {
+      requestBody = {
+        model,
+        messages,
+        temperature: this.config.temperature,
+        max_tokens: this.config.maxTokens,
+        stream: false,
+      };
+      endpoint = `${this.config.baseUrl}/chat/completions`;
     }
 
     try {
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+      // Validate Anthropic request format
+      if (isAnthropic) {
+        if (!requestBody.system) {
+          console.warn('Anthropic request missing system parameter');
+        }
+        if (!Array.isArray(requestBody.messages) || requestBody.messages.length === 0) {
+          throw new Error('Anthropic API requires at least one message in the messages array');
+        }
+      }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
@@ -948,11 +1282,43 @@ Based on the visual analysis and user request, generate the complete modified Op
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`LLM API error: ${response.status} - ${errorText}`);
+        let errorMessage = `API error (${response.status}): ${errorText}`;
+        
+        // Provide helpful error messages for common issues
+        if (response.status === 401) {
+          errorMessage = `Authentication failed. Please check your API key is correct${isAnthropic ? ' and starts with \'sk-ant-\'' : ''}.`;
+        } else if (response.status === 403) {
+          errorMessage = `Access forbidden. Check your API key permissions and account status.`;
+        } else if (response.status === 400) {
+          errorMessage = `Bad request: ${errorText}. Check your request format matches the API specification.`;
+        }
+        
+        throw new Error(errorMessage);
       }
 
-      const data = (await response.json()) as ChatCompletionResponse;
-      return data.choices[0]?.message?.content || '';
+      const data = await response.json();
+      
+      if (isAnthropic) {
+        // Anthropic response format: { content: [{ type: 'text', text: '...' }] }
+        if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
+          console.warn('Unexpected Anthropic response format:', data);
+          return '';
+        }
+        return data.content[0]?.text || '';
+      } else {
+        // OpenAI response format
+        const openAiData = data as ChatCompletionResponse;
+        return openAiData.choices[0]?.message?.content || '';
+      }
+    } catch (error) {
+      // Handle network errors (CORS, connection failures, etc.)
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        const apiKey = getApiKeyForProvider(this.config);
+        const hasKey = !!apiKey;
+        const keyHint = isAnthropic && hasKey ? ' (should start with sk-ant-)' : '';
+        throw new Error(`Network error: Failed to connect to ${endpoint}. ${hasKey ? `Check your API key format${keyHint} and network connection.` : 'API key is missing. Please configure your API key in settings.'} Original error: ${error.message}`);
+      }
+      throw error;
     } finally {
       this.abortController = null;
     }
@@ -967,13 +1333,11 @@ Based on the visual analysis and user request, generate the complete modified Op
   async attemptFix(code: string, errorMessage: string): Promise<string> {
     this.abortController = new AbortController();
 
+    const isAnthropic = isAnthropicProvider(this.config.baseUrl);
+    const headers = buildApiHeaders(this.config);
     const model = this.getModelForTask('planning');
     
-    const messages: ChatCompletionMessage[] = [
-      { role: 'system', content: ERROR_FIX_SYSTEM_PROMPT },
-      { 
-        role: 'user', 
-        content: `The following OpenSCAD code has an error. Please fix it.
+    const userMessage = `The following OpenSCAD code has an error. Please fix it.
 
 ERROR MESSAGE:
 ${errorMessage}
@@ -983,29 +1347,38 @@ BROKEN CODE:
 ${code}
 \`\`\`
 
-Please analyze the error and provide the complete fixed code.`
-      },
-    ];
+Please analyze the error and provide the complete fixed code.`;
 
-    const requestBody: ChatCompletionRequest = {
-      model,
-      messages,
-      temperature: 0.3, // Lower temperature for more precise fixes
-      max_tokens: this.config.maxTokens,
-      stream: false,
-    };
+    let requestBody: any;
+    let endpoint: string;
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
+    if (isAnthropic) {
+      requestBody = {
+        model,
+        max_tokens: this.config.maxTokens,
+        temperature: 0.3, // Lower temperature for more precise fixes
+        system: ERROR_FIX_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }],
+      };
+      endpoint = `${this.config.baseUrl}/messages`;
+    } else {
+      const messages: ChatCompletionMessage[] = [
+        { role: 'system', content: ERROR_FIX_SYSTEM_PROMPT },
+        { role: 'user', content: userMessage },
+      ];
 
-    const apiKeyAttemptFix = getApiKeyForProvider(this.config);
-    if (apiKeyAttemptFix) {
-      headers['Authorization'] = `Bearer ${apiKeyAttemptFix}`;
+      requestBody = {
+        model,
+        messages,
+        temperature: 0.3,
+        max_tokens: this.config.maxTokens,
+        stream: false,
+      };
+      endpoint = `${this.config.baseUrl}/chat/completions`;
     }
 
     try {
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
@@ -1017,8 +1390,14 @@ Please analyze the error and provide the complete fixed code.`
         throw new Error(`LLM API error: ${response.status} - ${errorText}`);
       }
 
-      const data = (await response.json()) as ChatCompletionResponse;
-      return data.choices[0]?.message?.content || '';
+      const data = await response.json();
+      
+      if (isAnthropic) {
+        return data.content?.[0]?.text || '';
+      } else {
+        const openAiData = data as ChatCompletionResponse;
+        return openAiData.choices[0]?.message?.content || '';
+      }
     } finally {
       this.abortController = null;
     }
@@ -1036,13 +1415,11 @@ Please analyze the error and provide the complete fixed code.`
   ): AsyncGenerator<string, void, unknown> {
     this.abortController = new AbortController();
 
+    const isAnthropic = isAnthropicProvider(this.config.baseUrl);
+    const headers = buildApiHeaders(this.config);
     const model = this.getModelForTask('planning');
     
-    const messages: ChatCompletionMessage[] = [
-      { role: 'system', content: ERROR_FIX_SYSTEM_PROMPT },
-      { 
-        role: 'user', 
-        content: `The following OpenSCAD code has an error. Please fix it.
+    const userMessage = `The following OpenSCAD code has an error. Please fix it.
 
 ERROR MESSAGE:
 ${errorMessage}
@@ -1052,29 +1429,39 @@ BROKEN CODE:
 ${code}
 \`\`\`
 
-Please analyze the error and provide the complete fixed code.`
-      },
-    ];
+Please analyze the error and provide the complete fixed code.`;
 
-    const requestBody: ChatCompletionRequest = {
-      model,
-      messages,
-      temperature: 0.3,
-      max_tokens: this.config.maxTokens,
-      stream: true,
-    };
+    let requestBody: any;
+    let endpoint: string;
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
+    if (isAnthropic) {
+      requestBody = {
+        model,
+        max_tokens: this.config.maxTokens,
+        temperature: 0.3,
+        system: ERROR_FIX_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }],
+        stream: true,
+      };
+      endpoint = `${this.config.baseUrl}/messages`;
+    } else {
+      const messages: ChatCompletionMessage[] = [
+        { role: 'system', content: ERROR_FIX_SYSTEM_PROMPT },
+        { role: 'user', content: userMessage },
+      ];
 
-    const apiKeyStreamFix = getApiKeyForProvider(this.config);
-    if (apiKeyStreamFix) {
-      headers['Authorization'] = `Bearer ${apiKeyStreamFix}`;
+      requestBody = {
+        model,
+        messages,
+        temperature: 0.3,
+        max_tokens: this.config.maxTokens,
+        stream: true,
+      };
+      endpoint = `${this.config.baseUrl}/chat/completions`;
     }
 
     try {
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
@@ -1104,17 +1491,38 @@ Please analyze the error and provide the complete fixed code.`
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed || trimmed === 'data: [DONE]') continue;
-          if (!trimmed.startsWith('data: ')) continue;
-
-          try {
-            const json = JSON.parse(trimmed.slice(6)) as ChatCompletionChunk;
-            const content = json.choices[0]?.delta?.content;
-            if (content) {
-              yield content;
+          if (!trimmed) continue;
+          
+          if (isAnthropic) {
+            // Anthropic SSE format
+            if (trimmed.startsWith('event: ') || trimmed.startsWith('data: ')) {
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const json = JSON.parse(trimmed.slice(6));
+                  if (json.type === 'content_block_delta' && json.delta?.text) {
+                    yield json.delta.text;
+                  } else if (json.type === 'text_delta' && json.text) {
+                    yield json.text;
+                  }
+                } catch {
+                  // Skip malformed JSON
+                }
+              }
             }
-          } catch {
-            // Skip malformed JSON
+          } else {
+            // OpenAI SSE format
+            if (trimmed === 'data: [DONE]') continue;
+            if (!trimmed.startsWith('data: ')) continue;
+
+            try {
+              const json = JSON.parse(trimmed.slice(6)) as ChatCompletionChunk;
+              const content = json.choices[0]?.delta?.content;
+              if (content) {
+                yield content;
+              }
+            } catch {
+              // Skip malformed JSON
+            }
           }
         }
       }

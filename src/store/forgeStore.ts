@@ -818,6 +818,8 @@ function loadLLMConfig(): LLMConfig {
         const baseUrl = parsed.baseUrl || '';
         if (baseUrl.includes('api.openai.com')) {
           providerApiKeys = { ...providerApiKeys, openai: parsed.apiKey };
+        } else if (baseUrl.includes('api.anthropic.com')) {
+          providerApiKeys = { ...providerApiKeys, anthropic: parsed.apiKey };
         } else if (baseUrl.includes('api.x.ai')) {
           providerApiKeys = { ...providerApiKeys, xai: parsed.apiKey };
         } else if (baseUrl.includes('api.together.xyz')) {

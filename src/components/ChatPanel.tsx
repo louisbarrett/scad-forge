@@ -175,6 +175,8 @@ const PROVIDER_PRESETS: Array<{
   { id: 'ollama', name: 'Ollama', baseUrl: PROVIDER_URLS.ollama, defaultModel: '', requiresKey: false, keyPlaceholder: '(optional for local)' },
   { id: 'openai', name: 'OpenAI', baseUrl: PROVIDER_URLS.openai, defaultModel: 'gpt-4o', requiresKey: true, keyPlaceholder: 'sk-...', 
     fallbackModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo', 'o1-preview', 'o1-mini'] },
+  { id: 'anthropic', name: 'Anthropic (Claude)', baseUrl: PROVIDER_URLS.anthropic, defaultModel: 'claude-3-5-sonnet-20241022', requiresKey: true, keyPlaceholder: 'sk-ant-...',
+    fallbackModels: ['claude-3-5-sonnet-20241022', 'claude-3-opus-20240229', 'claude-3-5-haiku-20241022', 'claude-3-sonnet-20240229'] },
   { id: 'xai', name: 'X.AI (Grok)', baseUrl: PROVIDER_URLS.xai, defaultModel: 'grok-2-vision-1212', requiresKey: true, keyPlaceholder: 'xai-...',
     fallbackModels: ['grok-2-vision-1212', 'grok-2-1212', 'grok-beta', 'grok-vision-beta'] },
   { id: 'together', name: 'Together', baseUrl: PROVIDER_URLS.together, defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', requiresKey: true, keyPlaceholder: '',
@@ -186,6 +188,7 @@ const PROVIDER_PRESETS: Array<{
 // Helper to detect provider from baseUrl
 function detectProviderFromUrl(baseUrl: string): LLMProvider {
   if (baseUrl.includes('api.openai.com')) return 'openai';
+  if (baseUrl.includes('api.anthropic.com')) return 'anthropic';
   if (baseUrl.includes('api.x.ai')) return 'xai';
   if (baseUrl.includes('api.together.xyz')) return 'together';
   if (baseUrl.includes('api.groq.com')) return 'groq';
@@ -240,10 +243,23 @@ function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
       // Don't send Content-Type for GET requests - some APIs reject it
       const headers: Record<string, string> = {};
       if (apiKey) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
+        // Anthropic uses x-api-key header, others use Authorization Bearer
+        if (baseUrl.includes('api.anthropic.com')) {
+          headers['x-api-key'] = apiKey;
+          headers['anthropic-version'] = '2023-06-01';
+          // Required header to enable CORS for browser requests
+          headers['anthropic-dangerous-direct-browser-access'] = 'true';
+        } else {
+          headers['Authorization'] = `Bearer ${apiKey}`;
+        }
       }
       
-      const response = await fetch(`${baseUrl}/models`, { 
+      // Anthropic uses /v1/models endpoint (same as others)
+      const modelsEndpoint = baseUrl.includes('api.anthropic.com') 
+        ? `${baseUrl.replace(/\/$/, '')}/models`
+        : `${baseUrl}/models`;
+      
+      const response = await fetch(modelsEndpoint, { 
         method: 'GET',
         headers,
       });
