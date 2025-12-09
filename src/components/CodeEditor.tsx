@@ -1,6 +1,6 @@
-import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import Editor, { type OnMount, type OnChange } from '@monaco-editor/react';
-import type { editor, Monaco } from 'monaco-editor';
+import type { editor } from 'monaco-editor';
 import { useForgeStore } from '../store/forgeStore';
 
 // OpenSCAD language definition for Monaco
@@ -180,7 +180,7 @@ interface CodeEditorProps {
 
 export function CodeEditor({ onCompile }: CodeEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const monacoRef = useRef<Monaco | null>(null);
+  const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
   const compileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const themeVersionRef = useRef(0);
   

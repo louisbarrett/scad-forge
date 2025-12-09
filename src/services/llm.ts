@@ -145,11 +145,6 @@ function convertMessagesForAnthropic(messages: ChatCompletionMessage[]): Array<{
   return converted;
 }
 
-// Helper to get system message from OpenAI format (Anthropic needs it in first user message)
-function getSystemMessage(messages: ChatCompletionMessage[]): string {
-  const systemMsg = messages.find(msg => msg.role === 'system');
-  return systemMsg && typeof systemMsg.content === 'string' ? systemMsg.content : '';
-}
 
 // System prompt for OpenSCAD code generation - CODE ONLY, no explanations
 const PLANNING_SYSTEM_PROMPT = `You are an expert OpenSCAD code generator. Your task is to generate or modify OpenSCAD code using Constructive Solid Geometry (CSG) operations.
@@ -1243,7 +1238,7 @@ Based on the visual analysis and user request, generate the complete modified Op
       endpoint = `${baseUrl}/messages`;
       
       // Debug logging (remove in production if needed)
-      if (process.env.NODE_ENV === 'development') {
+      if (import.meta.env.MODE === 'development') {
         console.log('[Anthropic API] Request:', {
           endpoint,
           model,
