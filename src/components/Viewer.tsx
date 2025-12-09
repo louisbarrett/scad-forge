@@ -64,12 +64,16 @@ function Model({ geometry, wireframe, flatShading, modelColor, modelEmissive }: 
   
   if (!geometry) return null;
   
+  // Check if geometry has vertex colors (from OpenSCAD color directives)
+  const hasVertexColors = geometry.hasAttribute('color');
+  
   // Use flat/matte material when flatShading is enabled
   if (flatShading) {
     return (
       <mesh ref={meshRef} geometry={geometry} castShadow receiveShadow>
         <meshLambertMaterial
-          color={modelColor}
+          color={hasVertexColors ? '#ffffff' : modelColor}
+          vertexColors={hasVertexColors}
           emissive={modelEmissive}
           emissiveIntensity={0.1}
           wireframe={wireframe}
@@ -83,7 +87,8 @@ function Model({ geometry, wireframe, flatShading, modelColor, modelEmissive }: 
   return (
     <mesh ref={meshRef} geometry={geometry} castShadow receiveShadow>
       <meshStandardMaterial
-        color={modelColor}
+        color={hasVertexColors ? '#ffffff' : modelColor}
+        vertexColors={hasVertexColors}
         emissive={modelEmissive}
         emissiveIntensity={0.15}
         metalness={0.4}
