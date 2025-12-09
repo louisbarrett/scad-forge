@@ -1528,17 +1528,21 @@ Please analyze the error and provide the complete fixed code.`;
 }
 
 // Extract OpenSCAD code from LLM response
+// Returns the LAST OpenSCAD code block found (to handle cases where the model generates multiple blocks)
 export function extractCodeFromResponse(response: string): string | null {
-  // Look for ```openscad code blocks
-  const openscadMatch = response.match(/```openscad\n([\s\S]*?)```/);
-  if (openscadMatch) {
-    return openscadMatch[1].trim();
+  // Find ALL ```openscad code blocks using global match
+  const openscadMatches = [...response.matchAll(/```openscad\n([\s\S]*?)```/g)];
+  if (openscadMatches.length > 0) {
+    // Return the last match (most recent/final code block)
+    const lastMatch = openscadMatches[openscadMatches.length - 1];
+    return lastMatch[1].trim();
   }
 
-  // Fallback: look for any code block
-  const codeMatch = response.match(/```\n?([\s\S]*?)```/);
-  if (codeMatch) {
-    return codeMatch[1].trim();
+  // Fallback: look for any code block (also get the last one)
+  const codeMatches = [...response.matchAll(/```\n?([\s\S]*?)```/g)];
+  if (codeMatches.length > 0) {
+    const lastMatch = codeMatches[codeMatches.length - 1];
+    return lastMatch[1].trim();
   }
 
   return null;
