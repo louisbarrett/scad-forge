@@ -572,6 +572,13 @@ interface ChatPanelProps {
   triggerCapture?: () => Promise<string | null>;
 }
 
+interface ReferenceImage {
+  id: string;
+  dataUrl: string;
+  name: string;
+  timestamp: number;
+}
+
 export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapture }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [includeCode, setIncludeCode] = useState(true);
@@ -580,8 +587,12 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapt
   const [showSettings, setShowSettings] = useState(false);
   const [autoAppliedMessages, setAutoAppliedMessages] = useState<Set<string>>(new Set());
   const [isCapturing, setIsCapturing] = useState(false);
+  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
   
   const {
     code,
@@ -630,6 +641,137 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapt
   // Get the latest capture for image attachment
   const latestCapture = captures.length > 0 ? captures[captures.length - 1] : null;
   
+  // Handle file drop for reference images
+  const handleFileDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const files = Array.from(e.dataTransfer.files);
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    
+    if (imageFiles.length === 0) return;
+    
+    imageFiles.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        const newImage: ReferenceImage = {
+          id: `ref-${Date.now()}-${Math.random()}`,
+          dataUrl,
+          name: file.name,
+          timestamp: Date.now(),
+        };
+        
+        setReferenceImages(prev => {
+          const updated = [...prev, newImage];
+          // Auto-select the newly added image
+          setSelectedImageId(newImage.id);
+          return updated;
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+  
+  // Handle file input for reference images
+  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    
+    if (imageFiles.length === 0) return;
+    
+    imageFiles.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        const newImage: ReferenceImage = {
+          id: `ref-${Date.now()}-${Math.random()}`,
+          dataUrl,
+          name: file.name,
+          timestamp: Date.now(),
+        };
+        
+        setReferenceImages(prev => {
+          const updated = [...prev, newImage];
+          // Auto-select the newly added image
+          setSelectedImageId(newImage.id);
+          return updated;
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+    
+    // Reset input
+    e.target.value = '';
+  }, []);
+  
+  // Remove reference image
+  const removeReferenceImage = useCallback((id: string) => {
+    setReferenceImages(prev => {
+      const updated = prev.filter(img => img.id !== id);
+      if (selectedImageId === id) {
+        setSelectedImageId(updated.length > 0 ? updated[updated.length - 1].id : null);
+      }
+      return updated;
+    });
+  }, [selectedImageId]);
+  
+  // Drag and drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+  
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+  
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+  
+  // Capture viewer and add to reference images
+  const handleCaptureViewer = useCallback(async () => {
+    if (!triggerCapture || isCapturing) return;
+    
+    setIsCapturing(true);
+    try {
+      const capturedUrl = await triggerCapture();
+      if (capturedUrl) {
+        const newImage: ReferenceImage = {
+          id: `viewer-${Date.now()}-${Math.random()}`,
+          dataUrl: capturedUrl,
+          name: `Viewer Snapshot ${new Date().toLocaleTimeString()}`,
+          timestamp: Date.now(),
+        };
+        
+        setReferenceImages(prev => {
+          const updated = [...prev, newImage];
+          // Auto-select the newly captured image
+          setSelectedImageId(newImage.id);
+          return updated;
+        });
+        
+        // Also save to captures store
+        addCapture({
+          imageDataUrl: capturedUrl,
+          code,
+          cameraPosition: [0, 0, 0],
+          cameraTarget: [0, 0, 0],
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to capture viewer:', e);
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [triggerCapture, isCapturing, code, addCapture]);
+  
   // Format system messages for inclusion in chat
   const formatSystemMessagesForChat = useCallback(() => {
     const recentMessages = systemMessages.slice(-5); // Last 5 messages
@@ -651,29 +793,42 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapt
     
     let imageDataUrl: string | undefined;
     
-    // Auto-capture if includeImage is enabled
-    if (includeImage && triggerCapture) {
-      setIsCapturing(true);
-      try {
-        const capturedUrl = await triggerCapture();
-        if (capturedUrl) {
-          imageDataUrl = capturedUrl;
-          // Also save to captures store
-          addCapture({
-            imageDataUrl: capturedUrl,
-            code,
-            cameraPosition: [0, 0, 0],
-            cameraTarget: [0, 0, 0],
-          });
+    // Priority: selected reference image > auto-capture > latest capture
+    if (includeImage) {
+      // First check if a reference image is selected
+      if (selectedImageId) {
+        const selectedImage = referenceImages.find(img => img.id === selectedImageId);
+        if (selectedImage) {
+          imageDataUrl = selectedImage.dataUrl;
         }
-      } catch (e) {
-        console.warn('Failed to capture image:', e);
-      } finally {
-        setIsCapturing(false);
       }
-    } else if (includeImage && latestCapture) {
-      // Fall back to existing capture if no trigger function
-      imageDataUrl = latestCapture.imageDataUrl;
+      
+      // If no reference image selected, try auto-capture
+      if (!imageDataUrl && triggerCapture) {
+        setIsCapturing(true);
+        try {
+          const capturedUrl = await triggerCapture();
+          if (capturedUrl) {
+            imageDataUrl = capturedUrl;
+            // Also save to captures store
+            addCapture({
+              imageDataUrl: capturedUrl,
+              code,
+              cameraPosition: [0, 0, 0],
+              cameraTarget: [0, 0, 0],
+            });
+          }
+        } catch (e) {
+          console.warn('Failed to capture image:', e);
+        } finally {
+          setIsCapturing(false);
+        }
+      }
+      
+      // Fall back to latest capture if no reference image and no capture
+      if (!imageDataUrl && latestCapture) {
+        imageDataUrl = latestCapture.imageDataUrl;
+      }
     }
     
     const hasImage = !!imageDataUrl;
@@ -762,7 +917,7 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapt
     } finally {
       setChatStreaming(false);
     }
-  }, [input, includeCode, includeImage, includeSystem, code, latestCapture, llmConfig, isChatStreaming, isCapturing, systemMessages, triggerCapture, addChatMessage, updateChatMessage, appendToChatMessage, setChatStreaming, onCompile, addCapture, formatSystemMessagesForChat]);
+  }, [input, includeCode, includeImage, includeSystem, code, latestCapture, llmConfig, isChatStreaming, isCapturing, systemMessages, triggerCapture, addChatMessage, updateChatMessage, appendToChatMessage, setChatStreaming, onCompile, addCapture, formatSystemMessagesForChat, selectedImageId, referenceImages]);
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -872,6 +1027,102 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapt
       </div>
       
       <div className="chat-input-area">
+        {/* Reference Images Section */}
+        {(referenceImages.length > 0 || triggerCapture) && (
+          <div className="reference-images-section">
+            <div className="reference-images-header">
+              <span className="reference-images-title">📎 Reference Images</span>
+              <div className="reference-images-actions">
+                {triggerCapture && (
+                  <button
+                    className="action-btn small-btn capture-viewer-btn"
+                    onClick={handleCaptureViewer}
+                    disabled={isCapturing}
+                    title="Capture current 3D viewer"
+                  >
+                    {isCapturing ? '⏳' : '📷'} {isCapturing ? 'Capturing...' : 'Snapshot Viewer'}
+                  </button>
+                )}
+                {referenceImages.length > 0 && (
+                  <button
+                    className="action-btn small-btn"
+                    onClick={() => {
+                      setReferenceImages([]);
+                      setSelectedImageId(null);
+                    }}
+                    title="Clear all reference images"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+            {referenceImages.length > 0 && (
+              <div className="reference-images-grid">
+                {referenceImages.map((img) => (
+                  <div
+                    key={img.id}
+                    className={`reference-image-item ${selectedImageId === img.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedImageId(img.id)}
+                    title={img.name}
+                  >
+                    <img src={img.dataUrl} alt={img.name} />
+                    <button
+                      className="remove-image-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeReferenceImage(img.id);
+                      }}
+                      title="Remove image"
+                    >
+                      ✕
+                    </button>
+                    {selectedImageId === img.id && (
+                      <div className="selected-badge">✓</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Drop Zone */}
+        <div
+          ref={dropZoneRef}
+          className={`drop-zone ${isDragging ? 'dragging' : ''} ${referenceImages.length > 0 ? 'has-images' : ''}`}
+          onDrop={handleFileDrop}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+        >
+          {isDragging ? (
+            <div className="drop-zone-content">
+              <span className="drop-zone-icon">📎</span>
+              <span className="drop-zone-text">Drop images here</span>
+            </div>
+          ) : (
+            <div className="drop-zone-content">
+              <input
+                type="file"
+                id="image-upload"
+                accept="image/*"
+                multiple
+                onChange={handleFileInput}
+                style={{ display: 'none' }}
+              />
+              <label htmlFor="image-upload" className="drop-zone-label">
+                <span className="drop-zone-icon">📎</span>
+                <span className="drop-zone-text">
+                  {referenceImages.length > 0 
+                    ? 'Drag images here or click to add more' 
+                    : 'Drag images here or click to add reference images'}
+                </span>
+              </label>
+            </div>
+          )}
+        </div>
+        
         <div className="input-options">
           <label className={`option-toggle ${includeCode ? 'active' : ''}`}>
             <input
@@ -881,7 +1132,7 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapt
             />
             <span className="option-icon">📝</span> Code
           </label>
-          <label className={`option-toggle ${includeImage ? 'active' : ''}`} title="Auto-captures the 3D view when sending">
+          <label className={`option-toggle ${includeImage ? 'active' : ''}`} title="Sends selected reference image or captures the 3D view when sending">
             <input
               type="checkbox"
               checked={includeImage}
@@ -889,6 +1140,9 @@ export function ChatPanel({ onCompile, onCancelCompile, isCompiling, triggerCapt
             />
             <span className="option-icon">📷</span> Image
             {isCapturing && <span className="option-hint">(capturing...)</span>}
+            {selectedImageId && !isCapturing && (
+              <span className="option-hint">(reference)</span>
+            )}
           </label>
           <label className={`option-toggle ${includeSystem ? 'active' : ''} ${systemMessages.length === 0 ? 'disabled' : ''}`} title="Include recent errors and warnings in context">
             <input
